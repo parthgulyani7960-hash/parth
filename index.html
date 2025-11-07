@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <title>Creative Studio AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        perspective: 1000px;
+        background: #F7F8FC;
+        background: linear-gradient(135deg, #F7F8FC 0%, #E8EBF6 100%);
+        animation: gradient-animation 15s ease infinite;
+        background-size: 200% 200%;
+      }
+      .dark body {
+        background: #020617;
+        background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+        animation: gradient-animation-dark 15s ease infinite;
+        background-size: 200% 200%;
+      }
+      @keyframes gradient-animation {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      @keyframes gradient-animation-dark {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes slideInUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes shimmer { 100% { transform: translateX(100%); } }
+      @keyframes button-glow {
+        0%, 100% { box-shadow: 0 0 4px #7C3AED; }
+        50% { box-shadow: 0 0 16px #7C3AED; }
+      }
+      .card-tilt {
+        transform-style: preserve-3d;
+        transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      }
+      .card-tilt:hover {
+        /* JS will apply transform based on mouse position */
+      }
+      .button-glow:hover {
+        animation: button-glow 1.5s infinite;
+      }
+      /* Global fix for dark mode input text visibility */
+      .dark input, .dark textarea, .dark select {
+          color-scheme: dark;
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'brand-bg': 'transparent', // Body now handles the background
+              'brand-primary': '#7C3AED', // A vibrant violet
+              'brand-secondary': '#4F46E5', // A deep indigo
+              'brand-text': '#334155', // Slate 700
+              'brand-subtle': '#64748B', // Slate 500
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            boxShadow: {
+              'neumorphic-inset': 'inset 6px 6px 12px #e6e7ee, inset -6px -6px 12px #ffffff',
+              'neumorphic': '12px 12px 24px #d9d9d9, -12px -12px 24px #ffffff',
+              'interactive': '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+              'interactive-lg': '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)'
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+              'slide-in-up': 'slideInUp 0.5s ease-out forwards',
+            },
+            keyframes: {
+              fadeIn: { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+              slideInUp: { 
+                '0%': { transform: 'translateY(20px)', opacity: 0 }, 
+                '100%': { transform: 'translateY(0)', opacity: 1 } 
+              },
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-brand-bg dark:bg-slate-900">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

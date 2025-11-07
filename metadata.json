@@ -1,0 +1,8 @@
+{
+  "name": "Creative Studio AI",
+  "description": "A next-generation all-in-one editing application that combines powerful AI-powered tools for video, photo, and audio editing in a single, unified platform with a clean, futuristic, and minimal UI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
