@@ -16,23 +16,36 @@
     <style>
       body {
         perspective: 1000px;
-        background: #F7F8FC;
-        background: linear-gradient(135deg, #F7F8FC 0%, #E8EBF6 100%);
-        animation: gradient-animation 15s ease infinite;
+        background-color: #F7F8FC;
+        position: relative;
+        overflow-x: hidden;
+      }
+      body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, rgba(196, 208, 255, 0.3) 0%, rgba(225, 232, 255, 0.1) 100%);
+        animation: premium-gradient-animation 20s ease infinite;
         background-size: 200% 200%;
+        z-index: -2;
       }
       .dark body {
-        background: #020617;
-        background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
-        animation: gradient-animation-dark 15s ease infinite;
+        background-color: #020617;
+      }
+      .dark body::before {
+        background: linear-gradient(135deg, rgba(56, 15, 114, 0.3) 0%, rgba(13, 17, 43, 0.1) 100%);
+        animation: premium-gradient-animation-dark 20s ease infinite;
         background-size: 200% 200%;
       }
-      @keyframes gradient-animation {
+      @keyframes premium-gradient-animation {
         0% { background-position: 0% 50%; }
         50% { background-position: 100% 50%; }
         100% { background-position: 0% 50%; }
       }
-      @keyframes gradient-animation-dark {
+      @keyframes premium-gradient-animation-dark {
         0% { background-position: 0% 50%; }
         50% { background-position: 100% 50%; }
         100% { background-position: 0% 50%; }
@@ -122,10 +135,10 @@
   <script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0"
+    "@google/genai": "https://esm.run/@google/genai",
+    "react-dom/": "https://esm.sh/react-dom@18.2.0/",
+    "react": "https://esm.sh/react@18.2.0",
+    "react/": "https://esm.sh/react@18.2.0/"
   }
 }
 </script>

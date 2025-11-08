@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { HistoryItem } from '../types';
-import { generateText } from '../services/geminiService';
+import { startChat, generateChatResponse } from '../services/geminiService';
 import Card from './common/Card';
 import Button from './common/Button';
 import Icon from './common/Icon';
@@ -17,11 +17,16 @@ type Message = {
 
 const CreativeChat: React.FC<CreativeChatProps> = ({ addHistoryItem }) => {
     const [messages, setMessages] = useState<Message[]>([
-        { role: 'ai', content: "Hello! I'm your creative partner. How can I help you brainstorm, write, or plan today?" }
+        { role: 'ai', content: "Hello! I'm your creative partner with a persistent memory. How can I help you brainstorm, write, or plan today?" }
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // Initialize the chat session when the component mounts
+        startChat();
+    }, []);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -40,7 +45,7 @@ const CreativeChat: React.FC<CreativeChatProps> = ({ addHistoryItem }) => {
         setIsLoading(true);
 
         try {
-            const aiResponse = await generateText('chat', input, '', {});
+            const aiResponse = await generateChatResponse(input);
             const aiMessage: Message = { role: 'ai', content: aiResponse };
             setMessages(prev => [...prev, aiMessage]);
             addHistoryItem('Creative Chat', 'Chatted with AI', 'chat');
@@ -82,7 +87,11 @@ const CreativeChat: React.FC<CreativeChatProps> = ({ addHistoryItem }) => {
                                     <Icon name="sparkles" className="w-5 h-5" />
                                 </div>
                                 <div className="max-w-md p-4 rounded-2xl bg-slate-100 dark:bg-slate-700 text-brand-text dark:text-slate-200 rounded-bl-none">
-                                    <Spinner />
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                                    </div>
                                 </div>
                             </div>
                         )}

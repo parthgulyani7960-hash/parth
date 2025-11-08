@@ -65,6 +65,8 @@ export const SoundProvider: FC<{children: ReactNode}> = ({ children }) => {
     }
   }, [isSoundEnabled]);
 
+  // FIX: Replaced JSX with React.createElement to be compatible with a .ts file extension.
+  // JSX syntax is not supported in .ts files by default.
   return React.createElement(
     SoundContext.Provider,
     { value: { isSoundEnabled, setIsSoundEnabled, playSound } },

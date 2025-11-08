@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
-  name: 'photo' | 'video' | 'audio' | 'text' | 'template' | 'magic' | 'back' | 'mic' | 'stop' | 'play' | 'pause' | 'upload' | 'sparkles' | 'wand' | 'scissors' | 'adjustments' | 'crop' | 'music' | 'palette' | 'eraser' | 'subtitles' | 'undo' | 'redo' | 'sound-wave' | 'user' | 'settings' | 'feedback' | 'log-out' | 'x' | 'download' | 'help' | 'history' | 'cloud' | 'plus-square' | 'face-smile' | 'brand' | 'upscale' | 'chat' | 'globe' | 'user-plus' | 'layout-dashboard' | 'info' | 'image' | 'film' | 'music-2' | 'type' | 'layout-grid' | 'bot' | 'star' | 'feather' | 'stabilize' | 'shield' | 'lock' | 'crown' | 'download-cloud' | 'sliders' | 'shield-check';
+  name: 'photo' | 'video' | 'audio' | 'text' | 'template' | 'magic' | 'back' | 'mic' | 'stop' | 'play' | 'pause' | 'upload' | 'sparkles' | 'wand' | 'scissors' | 'adjustments' | 'crop' | 'music' | 'palette' | 'eraser' | 'subtitles' | 'undo' | 'redo' | 'sound-wave' | 'user' | 'settings' | 'feedback' | 'log-out' | 'x' | 'download' | 'help' | 'history' | 'cloud' | 'plus-square' | 'face-smile' | 'brand' | 'upscale' | 'chat' | 'globe' | 'user-plus' | 'layout-dashboard' | 'info' | 'image' | 'film' | 'music-2' | 'type' | 'layout-grid' | 'bot' | 'star' | 'feather' | 'stabilize' | 'shield' | 'lock' | 'crown' | 'download-cloud' | 'sliders' | 'shield-check' | 'folder';
 }
 
 const Icon: React.FC<IconProps> = ({ name, ...props }) => {
@@ -63,6 +63,7 @@ const Icon: React.FC<IconProps> = ({ name, ...props }) => {
     'crown': <><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm0 0L12 14 22 4"></path></>,
     'download-cloud': <><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></>,
     'sliders': <path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/>,
+    'folder': <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></>,
   };
 
   return (

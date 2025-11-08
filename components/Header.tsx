@@ -65,7 +65,7 @@ const Header: React.FC<HeaderProps> = ({ user, onOpenSettings, onOpenFeedback, o
           {user.avatar}
         </Button>
         {isProfileMenuOpen && (
-          <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-slate-700 animate-fade-in py-2 z-30">
+          <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-slate-700 animate-fade-in py-2 z-50">
             <div className="px-4 py-3 border-b dark:border-slate-700">
                 <p className="font-semibold text-brand-text dark:text-slate-200 truncate">{user.name}</p>
                 <p className="text-sm text-brand-subtle dark:text-slate-400 truncate">{user.email}</p>

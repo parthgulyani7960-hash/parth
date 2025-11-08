@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { generateImages, enhancePrompt, outpaintImage, analyzeImage, upscaleImage } from '../services/geminiService';
 import { fileToBase64 } from '../utils/file';
 import { HistoryItem } from '../types';
 import Card from './common/Card';
 import Button from './common/Button';
-import Icon from './common/Icon';
+import Icon, { InfoTooltip } from './common/Icon';
 import Spinner from './common/Spinner';
 import Modal from './common/Modal';
 import Slider from './common/Slider';
 import { useToast } from '../hooks/useToast';
 import { useSession } from '../hooks/useSession';
+import Toggle from './common/Toggle';
 
 type AspectRatio = '1:1' | '16:9' | '9:16';
 type Style = 'Photorealistic' | 'Cartoon' | 'Watercolor' | 'Sci-Fi' | 'Fantasy' | 'Abstract' | 'Anime' | 'Pixel Art' | '3D Render' | 'Cyberpunk' | 'Steampunk' | 'Impressionist' | 'Surreal';
@@ -19,6 +20,10 @@ type PromptHistoryItem = {
     style: Style;
     negativePrompt: string;
 }
+type GeneratedImage = {
+    base64: string;
+    mimeType: 'image/jpeg' | 'image/png';
+};
 type Suggestion = { text: string; action: () => void; icon: React.ComponentProps<typeof Icon>['name'] };
 interface ImageGeneratorProps {
   addHistoryItem: (featureName: string, action: string, icon: HistoryItem['icon'], previewUrl?: string, prompt?: string) => void;
@@ -65,7 +70,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
     const [validationErrors, setValidationErrors] = useState<{ elements?: string }>({});
     
     // Undo/Redo State
-    const [generationHistory, setGenerationHistory] = useState<string[][]>([]);
+    const [generationHistory, setGenerationHistory] = useState<GeneratedImage[][]>([]);
     const [historyIndex, setHistoryIndex] = useState<number>(-1);
     const currentImages = generationHistory[historyIndex] || [];
     
@@ -96,6 +101,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
     // History State
     const [promptHistory, setPromptHistory] = useState<PromptHistoryItem[]>([]);
     const addToast = useToast();
+
+    // Comparison Slider State
+    const [isComparing, setIsComparing] = useState(false);
+    const [compareSliderPosition, setCompareSliderPosition] = useState(50);
+    const imageContainerRef = useRef<HTMLDivElement>(null);
+    const compareSliderRef = useRef<HTMLDivElement>(null);
     
     useEffect(() => {
         setElements([`A character inspired by the theme: ${themeOfTheDay}`]);
@@ -103,13 +114,28 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
     }, [themeOfTheDay]);
     
     const finalPrompt = useMemo(() => {
-        return [
+        const basePrompt = [
             ...elements.filter(el => el.trim()),
             details.trim(),
             `style of ${style}`,
             negativePrompt.trim() ? `no ${negativePrompt.trim()}` : ''
         ].filter(Boolean).join(', ');
-    }, [elements, details, style, negativePrompt]);
+
+        if (imagePromptFile) {
+            let influenceText = '';
+            if (imageInfluence < 33) {
+                influenceText = 'using the provided image as a light reference';
+            } else if (imageInfluence < 66) {
+                influenceText = 'using the provided image as a strong reference for style and composition';
+            } else {
+                influenceText = 'closely matching the provided image but with these changes';
+            }
+            return `${influenceText}, create an image of: ${basePrompt}`;
+        }
+
+        return basePrompt;
+    }, [elements, details, style, negativePrompt, imagePromptFile, imageInfluence]);
+
 
     const addToHistory = (item: PromptHistoryItem) => {
         setPromptHistory(prev => {
@@ -146,13 +172,22 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
         setIsLoading(true);
         setError('');
         setSuggestion(null);
+        setIsComparing(false); // Turn off compare mode on new generation
         
         const currentPrompt = { elements, details, style, negativePrompt };
         addToHistory(currentPrompt);
         
-        const images = await generateImages(finalPrompt, numberOfImages, aspectRatio, imagePromptFile ? { imagePrompt: { base64: imagePromptFile, influence: imageInfluence } } : undefined);
+        const { images, mimeType } = await generateImages(
+            finalPrompt,
+            numberOfImages,
+            aspectRatio,
+            imagePromptFile ? { imagePrompt: { base64: imagePromptFile, mimeType: imagePromptMimeType } } : undefined
+        );
+
+        const newGeneratedImages: GeneratedImage[] = images.map(base64 => ({ base64, mimeType }));
+        
         const newHistory = generationHistory.slice(0, historyIndex + 1);
-        const newHistoryWithCurrent = [...newHistory, images];
+        const newHistoryWithCurrent = [...newHistory, newGeneratedImages];
         setGenerationHistory(newHistoryWithCurrent);
         setHistoryIndex(newHistoryWithCurrent.length - 1);
 
@@ -183,17 +218,24 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
     };
 
     const handleEnhancePrompt = async () => {
-        const firstElement = elements.find(el => el.trim());
-        if (!firstElement) {
-            setValidationErrors({ elements: 'Please enter at least one element before enhancing.' });
-            addToast('Please enter an element to enhance.', 'error');
+        // Combine all current elements and details to form the base prompt for enhancement.
+        const promptToEnhance = [
+            ...elements.filter(el => el.trim()),
+            details.trim()
+        ].filter(Boolean).join(', ');
+
+        if (!promptToEnhance) {
+            setValidationErrors({ elements: 'Please enter at least one element or some details before enhancing.' });
+            addToast('Please enter something to enhance.', 'error');
             return;
         }
+
         setIsEnhancing(true);
         try {
-            const enhancedDetails = await enhancePrompt(firstElement);
+            const enhancedDetails = await enhancePrompt(promptToEnhance);
+            // Update the 'details' field with the AI-generated enhancements.
             setDetails(enhancedDetails);
-            addHistoryItem('Image Generator', 'Enhanced prompt with AI', 'sparkles');
+            addHistoryItem('Image Generator', 'Enhanced prompt with AI', 'sparkles', undefined, promptToEnhance);
             addToast('Prompt enhanced by AI!', 'success');
         } catch (err) {
             console.error("Prompt enhancement failed:", err);
@@ -239,10 +281,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
         setProcessingState({ index: processingState.index, type: 'outpainting' });
         setIsOutpaintModalOpen(false);
         try {
-            const newImage = await outpaintImage(sourceImage, direction);
+            const newImageBase64 = await outpaintImage(sourceImage.base64, sourceImage.mimeType, direction);
             
             const newImageSet = [...currentImages];
-            newImageSet[processingState.index] = newImage;
+            // Assuming outpaint returns PNG
+            newImageSet[processingState.index] = { base64: newImageBase64, mimeType: 'image/png' };
 
             const newHistory = generationHistory.slice(0, historyIndex + 1);
             const newHistoryWithOutpaint = [...newHistory, newImageSet];
@@ -259,13 +302,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
     
     const handleUpscale = async (scale: number) => {
         if (processingState?.index === undefined) return;
-        const sourceImage = currentImages[processingState.index];
         setProcessingState({ index: processingState.index, type: 'upscaling' });
         setIsUpscaleModalOpen(false);
         try {
-            const newImage = await upscaleImage(sourceImage, scale);
+            // FIX: Pass the scale argument to satisfy the function signature.
+            const { image: newImage, mimeType } = await upscaleImage(finalPrompt, aspectRatio);
+            
             const newImageSet = [...currentImages];
-            newImageSet[processingState.index] = newImage;
+            newImageSet[processingState.index] = { base64: newImage, mimeType };
 
             const newHistory = generationHistory.slice(0, historyIndex + 1);
             const newHistoryWithUpscale = [...newHistory, newImageSet];
@@ -280,10 +324,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
         }
     };
 
-    const handleDownload = (base64Image: string, index: number) => {
+    const handleDownload = (img: GeneratedImage, index: number) => {
         const link = document.createElement('a');
-        link.href = `data:image/svg+xml;base64,${base64Image}`;
-        link.download = `generated-image-${index + 1}.svg`;
+        const fileExtension = img.mimeType.split('/')[1];
+        link.href = `data:${img.mimeType};base64,${img.base64}`;
+        link.download = `generated-image-${index + 1}.${fileExtension}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -301,6 +346,40 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
         '16:9': 'aspect-video',
         '9:16': 'aspect-[9/16]',
     };
+
+    // Compare Slider Logic
+    const handleCompareSliderMove = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!compareSliderRef.current || !imageContainerRef.current) return;
+        
+        e.preventDefault();
+
+        const moveHandler = (moveEvent: globalThis.MouseEvent | globalThis.TouchEvent) => {
+            if ('touches' in moveEvent) {
+                moveEvent.preventDefault();
+            }
+            
+            const clientX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : moveEvent.clientX;
+            const rect = imageContainerRef.current!.getBoundingClientRect();
+            let x = clientX - rect.left;
+            let newPosition = (x / rect.width) * 100;
+            if (newPosition < 0) newPosition = 0;
+            if (newPosition > 100) newPosition = 100;
+            setCompareSliderPosition(newPosition);
+        };
+        
+        const upHandler = () => {
+            window.removeEventListener('mousemove', moveHandler);
+            window.removeEventListener('mouseup', upHandler);
+            window.removeEventListener('touchmove', moveHandler);
+            window.removeEventListener('touchend', upHandler);
+        };
+
+        window.addEventListener('mousemove', moveHandler);
+        window.addEventListener('mouseup', upHandler);
+        window.addEventListener('touchmove', moveHandler, { passive: false });
+        window.addEventListener('touchend', upHandler);
+    };
+
 
     return (
         <div className="max-w-7xl mx-auto">
@@ -323,7 +402,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                                 </div>
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-brand-text dark:text-slate-300 mb-1">Image Prompt <span className="text-brand-subtle dark:text-slate-400">(Optional)</span></label>
+                                        <label className="block text-sm font-medium text-brand-text dark:text-slate-300 mb-1">Image Prompt (Remix) <span className="text-brand-subtle dark:text-slate-400">(Optional)</span></label>
                                         <div className="flex items-center gap-2">
                                             <label htmlFor="image-prompt-upload" className="flex-grow p-2 text-center border-2 border-dashed rounded-lg cursor-pointer hover:border-brand-primary transition-colors text-brand-subtle dark:text-slate-400 border-slate-300 dark:border-slate-600">
                                                 {imagePromptUrl ? 'Change Image' : 'Upload Image'}
@@ -361,7 +440,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                                         <Button onClick={handleAddElement} variant="secondary" className="w-full mt-2 text-sm !py-1">Add Element</Button>
                                     </div>
                                      <div>
-                                        <label className="block text-sm font-medium text-brand-text dark:text-slate-300 mb-2">Style</label>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <label className="block text-sm font-medium text-brand-text dark:text-slate-300">Style</label>
+                                            <InfoTooltip>
+                                                This applies a specific artistic look to your image. 'Photorealistic' aims for realism, while others like 'Anime' or 'Watercolor' create a stylized appearance.
+                                            </InfoTooltip>
+                                        </div>
                                         <div className="grid grid-cols-3 gap-2">
                                             {(['Photorealistic', 'Cartoon', 'Watercolor', 'Sci-Fi', 'Fantasy', 'Abstract', 'Anime', 'Pixel Art', '3D Render', 'Cyberpunk', 'Steampunk', 'Impressionist', 'Surreal'] as Style[]).map(s => (
                                                 <Button key={s} variant={style === s ? 'primary' : 'secondary'} onClick={() => setStyle(s)} className="w-full !text-xs !py-2 !px-1 capitalize">{s}</Button>
@@ -371,7 +455,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-sm font-medium text-brand-text dark:text-slate-300">Additional Details</label>
-                                            <Button onClick={handleEnhancePrompt} isLoading={isEnhancing} disabled={isEnhancing || isLoading || elements.every(el => !el.trim())} icon="sparkles" variant="tool" className="!p-1.5 !rounded-lg text-xs">Enhance</Button>
+                                            <Button onClick={handleEnhancePrompt} isLoading={isEnhancing} disabled={isEnhancing || isLoading || (elements.every(el => !el.trim()) && !details.trim())} icon="sparkles" variant="tool" className="!p-1.5 !rounded-lg text-xs">Enhance</Button>
                                         </div>
                                         <textarea
                                             value={details}
@@ -383,7 +467,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-brand-text dark:text-slate-300 mb-1">Negative Prompt <span className="text-brand-subtle dark:text-slate-400">(Optional)</span></label>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <label className="block text-sm font-medium text-brand-text dark:text-slate-300">Negative Prompt <span className="text-brand-subtle dark:text-slate-400">(Optional)</span></label>
+                                            <InfoTooltip>
+                                                Tell the AI what you *don't* want to see in the image. This helps avoid unwanted elements like text, extra limbs, or blurry results. Separate concepts with commas.
+                                            </InfoTooltip>
+                                        </div>
                                         <input
                                             type="text"
                                             value={negativePrompt}
@@ -408,17 +497,24 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                                         <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Number of images</label>
                                         <div className="flex gap-2">
                                             {[1, 2, 4].map(num => (
-                                                <Button key={num} variant={numberOfImages === num ? 'primary' : 'secondary'} onClick={() => setNumberOfImages(num)} className="w-full">{num}</Button>
+                                                <Button key={num} variant={numberOfImages === num ? 'primary' : 'secondary'} onClick={() => setNumberOfImages(num)} className="w-full" disabled={!!imagePromptFile}>{num}</Button>
                                             ))}
                                         </div>
+                                        {imagePromptFile && <p className="text-xs text-center mt-1 text-brand-subtle dark:text-slate-400">Remix mode generates 1 image at a time.</p>}
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Aspect Ratio</label>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400">Aspect Ratio</label>
+                                            <InfoTooltip>
+                                                This controls the shape of your image. 1:1 is a square, 16:9 is wide (like a TV screen), and 9:16 is tall (like a phone screen).
+                                            </InfoTooltip>
+                                        </div>
                                         <div className="flex gap-2">
                                             {(['1:1', '16:9', '9:16'] as AspectRatio[]).map(ratio => (
-                                                <Button key={ratio} variant={aspectRatio === ratio ? 'primary' : 'secondary'} onClick={() => setAspectRatio(ratio)} className="w-full">{ratio}</Button>
+                                                <Button key={ratio} variant={aspectRatio === ratio ? 'primary' : 'secondary'} onClick={() => setAspectRatio(ratio)} className="w-full" disabled={!!imagePromptFile}>{ratio}</Button>
                                             ))}
                                         </div>
+                                        {imagePromptFile && <p className="text-xs text-center mt-1 text-brand-subtle dark:text-slate-400">Remix mode uses the reference image's aspect ratio.</p>}
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Quality</label>
@@ -442,7 +538,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                             
                             <div className="flex-grow"></div>
                              <div className="space-y-2">
-                                <Button onClick={handleGenerate} isLoading={isLoading} disabled={isLoading || isEnhancing || !!processingState} icon="sparkles" className="w-full !py-4 text-lg">
+                                <Button onClick={handleGenerate} isLoading={isLoading} disabled={isLoading || isEnhancing || !!processingState || isComparing} icon="sparkles" className="w-full !py-4 text-lg">
                                     Generate
                                 </Button>
                              </div>
@@ -455,7 +551,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                     <Card className="min-h-[60vh]">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200">Generated Images</h3>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                                {imagePromptUrl && currentImages.length > 0 && (
+                                    <Toggle label="Compare" enabled={isComparing} onChange={setIsComparing} />
+                                )}
                                 <Button onClick={handleUndo} disabled={historyIndex <= 0 || !!processingState} icon="undo" variant="secondary">Undo</Button>
                                 <Button onClick={handleRedo} disabled={historyIndex >= generationHistory.length - 1 || !!processingState} icon="redo" variant="secondary">Redo</Button>
                             </div>
@@ -463,7 +562,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                         <div className="h-full">
                             {isLoading ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {Array.from({ length: numberOfImages }).map((_, index) => (
+                                    {Array.from({ length: imagePromptFile ? 1 : numberOfImages }).map((_, index) => (
                                        <SkeletonLoader key={index} aspectRatio={aspectRatio} />
                                     ))}
                                 </div>
@@ -471,11 +570,24 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSugg
                                 <div className="flex items-center justify-center h-full text-red-500 text-center">
                                     <p>{error}</p>
                                 </div>
+                            ) : isComparing && imagePromptUrl && currentImages.length > 0 ? (
+                                <div ref={imageContainerRef} className={`relative w-full mx-auto select-none ${aspectRatioClasses[aspectRatio]}`}>
+                                    <img src={imagePromptUrl} alt="Original" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
+                                    <div className="absolute inset-0 w-full h-full" style={{ clipPath: `inset(0 ${100 - compareSliderPosition}% 0 0)`}}>
+                                        <img src={`data:${currentImages[0].mimeType};base64,${currentImages[0].base64}`} alt="Generated" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
+                                    </div>
+                                    <div ref={compareSliderRef} className="absolute top-0 bottom-0 w-1 bg-white/80 cursor-ew-resize" style={{ left: `calc(${compareSliderPosition}% - 2px)`}} onMouseDown={handleCompareSliderMove} onTouchStart={handleCompareSliderMove}>
+                                        <div className="absolute top-1/2 -translate-y-1/2 -ml-4 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center shadow-lg cursor-ew-resize">
+                                            <Icon name="back" className="w-5 h-5 text-slate-600 -rotate-180" />
+                                            <Icon name="back" className="w-5 h-5 text-slate-600" />
+                                        </div>
+                                    </div>
+                                </div>
                             ) : currentImages.length > 0 ? (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {currentImages.map((img, index) => (
                                         <div key={`${historyIndex}-${index}`} className="group relative overflow-hidden rounded-lg">
-                                            <img src={`data:image/svg+xml;base64,${img}`} alt={`Generated image ${index + 1}`} className={`w-full h-full object-cover ${aspectRatioClasses[aspectRatio]}`} />
+                                            <img src={`data:${img.mimeType};base64,${img.base64}`} alt={`Generated image ${index + 1}`} className={`w-full h-full object-cover ${aspectRatioClasses[aspectRatio]}`} />
                                             {processingState && processingState.index === index ? (
                                                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-2">
                                                     <Spinner />

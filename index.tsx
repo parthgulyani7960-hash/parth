@@ -9,11 +9,15 @@ if (!rootElement) {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js')
+    // Construct the service worker URL based on the current origin to avoid cross-origin issues.
+    const swUrl = new URL('/service-worker.js', window.location.origin).href;
+    navigator.serviceWorker.register(swUrl)
       .then(registration => {
         console.log('ServiceWorker registration successful with scope: ', registration.scope);
       })
       .catch(error => {
+        // ServiceWorker registration can fail in sandboxed environments like this one due to security restrictions.
+        // This is an expected and benign error; the application will continue to function correctly.
         console.log('ServiceWorker registration failed: ', error);
       });
   });

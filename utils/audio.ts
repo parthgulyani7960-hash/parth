@@ -38,3 +38,34 @@ export async function decodeAudioData(
   }
   return buffer;
 }
+
+// Convert raw PCM audio data to a WAV file Blob
+export function pcmToWav(pcmData: Uint8Array, numChannels: number, sampleRate: number): Blob {
+    const dataView = new DataView(new ArrayBuffer(44 + pcmData.length));
+    const writeString = (offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+            dataView.setUint8(offset + i, string.charCodeAt(i));
+        }
+    };
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+
+    writeString(0, 'RIFF');
+    dataView.setUint32(4, 36 + pcmData.length, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    dataView.setUint32(16, 16, true); // Sub-chunk size
+    dataView.setUint16(20, 1, true); // Audio format 1 = PCM
+    dataView.setUint16(22, numChannels, true);
+    dataView.setUint32(24, sampleRate, true);
+    dataView.setUint32(28, byteRate, true);
+    dataView.setUint16(32, blockAlign, true);
+    dataView.setUint16(34, bitsPerSample, true);
+    writeString(36, 'data');
+    dataView.setUint32(40, pcmData.length, true);
+
+    new Uint8Array(dataView.buffer, 44).set(pcmData);
+
+    return new Blob([dataView], { type: 'audio/wav' });
+}

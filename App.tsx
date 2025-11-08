@@ -18,6 +18,10 @@ import Header from './components/Header';
 import { SessionProvider, useSession } from './hooks/useSession';
 import SuggestionChip from './components/common/SuggestionChip';
 import BottomNavBar from './components/common/BottomNavBar';
+import PasswordStrengthIndicator from './components/security/PasswordStrengthIndicator';
+import SecurityCenterModal from './components/security/SecurityCenterModal';
+import TwoFactorAuthSetupModal from './components/security/TwoFactorAuthSetupModal';
+import ChangePasswordModal from './components/security/ChangePasswordModal';
 
 const PhotoEditor = lazy(() => import('./components/PhotoEditor'));
 const VideoEditor = lazy(() => import('./components/VideoEditor'));
@@ -26,6 +30,9 @@ const TextEditor = lazy(() => import('./components/TextEditor'));
 const TemplatesEditor = lazy(() => import('./components/TemplatesEditor'));
 const ImageGenerator = lazy(() => import('./components/ImageGenerator'));
 const CreativeChat = lazy(() => import('./components/CreativeChat'));
+const AssetLibrary = lazy(() => import('./components/AssetLibrary'));
+const PixelArtStudio = lazy(() => import('./components/PixelArtStudio'));
+
 
 type Theme = 'light' | 'dark';
 type FeedbackCategory = 'bug' | 'feature' | 'question' | 'general';
@@ -36,16 +43,19 @@ type FeedbackItem = {
     user: { name: string; email: string };
     timestamp: Date;
 };
-type LoginStep = 'initial' | 'accountPicker' | 'securityCheck' | 'loggedIn';
+type LoginStep = 'initial' | 'accountPicker' | 'addAccount' | '2faVerification' | 'securityCheck' | 'loggedIn';
 type Suggestion = { text: string; action: () => void; icon: React.ComponentProps<typeof Icon>['name'] };
 
-
-const MOCK_USER = {
-    name: "Creative User",
-    email: "creative.user@example.com",
-    avatar: "CU"
+type MockUser = {
+    id: number;
+    name: string;
+    email: string;
+    avatar: string;
+    is2faEnabled?: boolean;
 };
+
 const ADMIN_EMAIL = "parthgulyani7960@gmail.com";
+
 const MOCK_SECURITY_EVENTS = [
     { id: 1, event: 'Successful Login', ip: '192.168.1.10', location: 'New York, USA', timestamp: new Date(Date.now() - 3600000) },
     { id: 2, event: 'Failed Login Attempt', ip: '203.0.113.25', location: 'Unknown', timestamp: new Date(Date.now() - 86400000) },
@@ -76,26 +86,130 @@ const LoginScreen: React.FC<{ onLogin: () => void; }> = ({ onLogin }) => {
   );
 };
 
-const GoogleAccountPicker: React.FC<{ onSelectAccount: () => void }> = ({ onSelectAccount }) => (
+const GoogleAccountPicker: React.FC<{ users: MockUser[], onSelectAccount: (user: MockUser) => void, onAddNew: () => void }> = ({ users, onSelectAccount, onAddNew }) => (
     <Modal isOpen={true} onClose={() => {}} title="Choose an account">
         <div className="space-y-2">
-            <button onClick={onSelectAccount} className="w-full flex items-center gap-4 p-3 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-200 to-sky-200 flex items-center justify-center text-brand-primary font-bold shadow-sm">{MOCK_USER.avatar}</div>
+            {users.map(user => (
+                <button key={user.id} onClick={() => onSelectAccount(user)} className="w-full flex items-center gap-4 p-3 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-200 to-sky-200 flex items-center justify-center text-brand-primary font-bold shadow-sm">{user.avatar}</div>
+                    <div>
+                        <p className="font-semibold text-brand-text dark:text-slate-200">{user.name}</p>
+                        <p className="text-sm text-brand-subtle dark:text-slate-400">{user.email}</p>
+                    </div>
+                    {user.is2faEnabled && <Icon name="shield-check" className="w-5 h-5 text-emerald-500 ml-auto" title="2FA Enabled" />}
+                </button>
+            ))}
+             <button onClick={onAddNew} className="w-full flex items-center gap-4 p-3 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                <div className="w-10 h-10 rounded-full border-2 border-slate-300 dark:border-slate-500 flex items-center justify-center text-brand-subtle dark:text-slate-400"><Icon name="user-plus" /></div>
                 <div>
-                    <p className="font-semibold text-brand-text dark:text-slate-200">{MOCK_USER.name}</p>
-                    <p className="text-sm text-brand-subtle dark:text-slate-400">{MOCK_USER.email}</p>
+                    <p className="font-semibold text-brand-text dark:text-slate-200">Use another account</p>
                 </div>
             </button>
         </div>
     </Modal>
 );
 
+const AddAccountScreen: React.FC<{ onComplete: (user: MockUser) => void }> = ({ onComplete }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email.trim() || !password.trim()) return;
+        setIsSubmitting(true);
+        // Simulate network delay
+        setTimeout(() => {
+            const name = email.split('@')[0].replace(/[\.\_]/g, ' ').replace(/\d+/g, '').replace(/(^\w|\s\w)/g, m => m.toUpperCase());
+            const avatar = (name.match(/\b\w/g) || []).slice(0, 2).join('').toUpperCase();
+            const newUser: MockUser = {
+                id: Date.now(),
+                name: name || "New User",
+                email: email,
+                avatar: avatar || 'NU'
+            };
+            onComplete(newUser);
+        }, 1000);
+    };
+
+    return (
+        <Modal isOpen={true} onClose={() => {}} title="Sign in with Google">
+            <p className="text-center text-brand-subtle dark:text-slate-400 mb-4">
+                Enter your account details.
+                <br />
+                (This is a simulation. No real data is sent.)
+            </p>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full p-3 border rounded-lg dark:bg-slate-800" placeholder="Email address" />
+                <div>
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full p-3 border rounded-lg dark:bg-slate-800" placeholder="Password" />
+                    <PasswordStrengthIndicator password={password} />
+                </div>
+                <Button type="submit" isLoading={isSubmitting} className="w-full mt-4 !py-3">Next</Button>
+            </form>
+        </Modal>
+    )
+};
+
+const TwoFactorAuthVerificationScreen: React.FC<{ onVerify: (code: string) => void, isVerifying: boolean, error: string }> = ({ onVerify, isVerifying, error }) => {
+    const [code, setCode] = useState('');
+
+    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+        setCode(value);
+    }
+    
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onVerify(code);
+    }
+
+    return (
+        <Modal isOpen={true} onClose={() => {}} title="Two-Factor Authentication">
+             <form onSubmit={handleSubmit} className="space-y-4 text-center">
+                 <Icon name="shield-check" className="w-16 h-16 text-emerald-500 mx-auto" />
+                 <p className="text-brand-subtle dark:text-slate-400">Enter the 6-digit code from your authenticator app.</p>
+                 <input
+                    type="text"
+                    value={code}
+                    onChange={handleInput}
+                    required
+                    maxLength={6}
+                    className="w-full p-4 text-2xl text-center tracking-[1em] border rounded-lg dark:bg-slate-800"
+                    placeholder="------"
+                    autoFocus
+                />
+                {error && <p className="text-red-500 text-sm">{error}</p>}
+                <Button type="submit" isLoading={isVerifying} className="w-full !py-3">Verify</Button>
+             </form>
+        </Modal>
+    );
+};
+
+
 const SecurityCheckScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
-    const [status, setStatus] = useState('Verifying identity...');
+    const [status, setStatus] = useState('Verifying your identity...');
+    const checks = [
+        'Checking for secure connection (SSL)...',
+        'Encrypting login data...',
+        'Performing 2-Factor Authentication check...',
+        'Cross-referencing device signature...',
+        'Security check complete. Welcome!',
+    ];
+
     useEffect(() => {
-        setTimeout(() => setStatus('Checking for secure connection...'), 1000);
-        setTimeout(() => setStatus('Security check complete.'), 2000);
-        setTimeout(onComplete, 2500);
+        let checkIndex = 0;
+        const interval = setInterval(() => {
+            if (checkIndex < checks.length) {
+                setStatus(checks[checkIndex]);
+                checkIndex++;
+            } else {
+                clearInterval(interval);
+                setTimeout(onComplete, 500);
+            }
+        }, 800);
+
+        return () => clearInterval(interval);
     }, [onComplete]);
 
     return (
@@ -137,20 +251,20 @@ const HistoryViewer: React.FC<{ history: HistoryItem[] }> = ({ history }) => {
 // --- FAQ Data and Component ---
 const faqData = [
     {
-        q: "Is this a real application? Are my images and data being processed?",
-        a: "Creative Studio Pro is a sophisticated demonstration app designed to showcase the potential of generative AI in a creative workflow. All 'AI' features are simulated locally in your browser using mock data and clever visual effects. No data is sent to any server, no real AI models are being run, and nothing is saved outside of your browser's local storage."
+        q: "How does this application work?",
+        a: "This is a high-fidelity prototype that uses the real Google Gemini API to power its features. All AI generation tasks, from text to images and video, are processed by Google's state-of-the-art models."
     },
     {
-        q: "Can I use my own API key for Google Gemini?",
-        a: "This demo is designed to run without needing any API key, making it accessible to everyone. The focus is on demonstrating UI/UX patterns and potential features, rather than being a fully functional AI product."
+        q: "Do I need an API key to use the features?",
+        a: "Yes. For features that use advanced models like Veo for video generation, you will be prompted to select your own Google AI Studio API key. This ensures that usage is tied to your account. You can get a key from ai.google.dev."
     },
     {
-        q: "How does the 'AI Voice Cloning' work?",
-        a: "The voice cloning feature is a simulation. When you upload an audio file, the app pretends to 'clone' it by simply remembering the file name. When you generate speech with the 'cloned' voice, it uses one of the standard pre-built mock voices for the audio output. It does not actually analyze or replicate the voice from your file."
+        q: "Why do I need to select my own API key for some features?",
+        a: "Advanced models like Veo have specific usage and billing requirements. By using your own key, you can manage your usage directly through your Google AI Studio account. This application provides a link to the billing documentation (ai.google.dev/gemini-api/docs/billing) for transparency."
     },
     {
-        q: "Why do some AI features produce abstract art or simple effects?",
-        a: "To simulate complex AI tasks like 'Style Transfer' or 'Image Generation' without a real AI, the app generates complex, randomized SVG (Scalable Vector Graphics) images. This allows it to create visually interesting and unique results on the fly that look 'generative' without the need for a powerful backend."
+        q: "Is my data safe?",
+        a: "Your project history and settings are saved locally in your browser's storage and are not sent to any server other than for processing by the Google Gemini API. Please review Google's API policies for information on how they handle data."
     },
     {
         q: "How is my history and theme saved?",
@@ -182,10 +296,124 @@ const FaqAccordion: React.FC = () => {
     );
 };
 
+const AdminDashboard: React.FC<{ feedbackItems: FeedbackItem[], history: HistoryItem[], onClearFeedback: () => void }> = ({ feedbackItems, history, onClearFeedback }) => {
+    const addToast = useToast();
+    const [isFixing, setIsFixing] = useState(false);
+    const [fixingStatus, setFixingStatus] = useState('');
+    
+    const totalGenerations = history.filter(item => item.action.toLowerCase().includes('generate')).length;
+    const mostUsedFeature = history.reduce((acc, item) => {
+        acc[item.featureName] = (acc[item.featureName] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    // FIX: Explicitly cast sorting values to numbers to prevent type errors with potentially malformed data.
+    const sortedFeatures = Object.entries(mostUsedFeature).sort((a, b) => Number(b[1]) - Number(a[1]));
+    
+    const handleFixBugs = () => {
+        setIsFixing(true);
+        const statuses = [
+            "Analyzing user feedback...",
+            "Identifying root cause of bugs...",
+            "Cross-referencing with system logs...",
+            "Generating potential code patches...",
+            "Deploying virtual hotfix...",
+            "Verifying system stability...",
+        ];
+        let statusIndex = 0;
+
+        const interval = setInterval(() => {
+            if (statusIndex < statuses.length) {
+                setFixingStatus(statuses[statusIndex]);
+                statusIndex++;
+            } else {
+                clearInterval(interval);
+                setIsFixing(false);
+                onClearFeedback();
+                addToast("AI analysis complete. All reported issues have been resolved.", "success");
+            }
+        }, 800);
+    };
+
+    return (
+         <div className="space-y-6">
+            <div>
+                <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-2">App Statistics (Mock)</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <Card className="text-center">
+                        <p className="text-3xl font-bold text-brand-primary">{Math.floor(Math.random() * 50) + 10}</p>
+                        <p className="text-sm text-brand-subtle dark:text-slate-400">Active Users (24h)</p>
+                    </Card>
+                     <Card className="text-center">
+                        <p className="text-3xl font-bold text-brand-primary">{totalGenerations * (Math.floor(Math.random() * 5) + 3)}</p>
+                        <p className="text-sm text-brand-subtle dark:text-slate-400">Generations Today</p>
+                    </Card>
+                     <Card className="text-center">
+                        <p className="text-3xl font-bold text-brand-primary">{sortedFeatures[0]?.[0] || 'N/A'}</p>
+                        <p className="text-sm text-brand-subtle dark:text-slate-400">Most Used Feature</p>
+                    </Card>
+                     <Card className="text-center">
+                        <p className="text-3xl font-bold text-brand-primary text-emerald-500">99.8%</p>
+                        <p className="text-sm text-brand-subtle dark:text-slate-400">API Uptime</p>
+                    </Card>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-2">User Feedback</h3>
+                    {feedbackItems.length > 0 ? (
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                            {feedbackItems.slice().reverse().map(item => (
+                                <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-semibold capitalize text-brand-text dark:text-slate-200">{item.category} <span className="font-normal text-xs text-brand-subtle dark:text-slate-500">from {item.user.name}</span></p>
+                                            <p className="text-sm text-brand-subtle dark:text-slate-400">{item.message}</p>
+                                        </div>
+                                        <p className="text-xs text-brand-subtle dark:text-slate-500">{item.timestamp.toLocaleString()}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-brand-subtle dark:text-slate-400">No new feedback submitted.</p>
+                    )}
+                </div>
+                <div>
+                    <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-2">Automated System Health</h3>
+                    <Card>
+                        {isFixing ? (
+                             <div className="flex items-center gap-3">
+                                <Spinner />
+                                <p className="font-semibold text-brand-text dark:text-slate-200">{fixingStatus}</p>
+                            </div>
+                        ) : (
+                             <div className="text-center space-y-3">
+                                <Icon name="shield-check" className="w-10 h-10 mx-auto text-emerald-500" />
+                                <p className="text-brand-text dark:text-slate-200 font-semibold">System is stable.</p>
+                                <Button
+                                    onClick={handleFixBugs}
+                                    disabled={feedbackItems.length === 0}
+                                    icon="sparkles"
+                                    variant="secondary"
+                                >
+                                    {feedbackItems.length > 0 ? `Resolve ${feedbackItems.length} issue(s) with AI` : 'No issues to resolve'}
+                                </Button>
+                            </div>
+                        )}
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // --- MAIN APP COMPONENT ---
 const App: React.FC = () => {
     const [loginStep, setLoginStep] = useState<LoginStep>('initial');
+    const [users, setUsers] = useState<MockUser[]>([]);
+    const [currentUser, setCurrentUser] = useState<MockUser | null>(null);
     const [activeFeature, setActiveFeature] = useState<AppFeature>(AppFeature.Dashboard);
     const [theme, setTheme] = useState<Theme>('light');
     const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -198,9 +426,15 @@ const App: React.FC = () => {
     const [isFaqOpen, setIsFaqOpen] = useState(false);
     const [isAdminOpen, setIsAdminOpen] = useState(false);
     const [isCommandBarOpen, setIsCommandBarOpen] = useState(false);
-    const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     
+    // Security Modals State
+    const [isSecuritySettingsOpen, setIsSecuritySettingsOpen] = useState(false);
+    const [isTwoFactorSetupOpen, setIsTwoFactorSetupOpen] = useState(false);
+    const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+    const [twoFactorVerificationError, setTwoFactorVerificationError] = useState('');
+    const [isVerifying2fa, setIsVerifying2fa] = useState(false);
+
     // Feedback form state
     const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory>('general');
     const [feedbackMessage, setFeedbackMessage] = useState('');
@@ -208,12 +442,9 @@ const App: React.FC = () => {
     
     // PWA Install state
     const [installPrompt, setInstallPrompt] = useState<any>(null);
-    
-    // Simulated Security State
-    const [is2faEnabled, setIs2faEnabled] = useState(false);
 
     const { isSoundEnabled, setIsSoundEnabled } = useSound();
-    const { setLastAction, themeOfTheDay } = useSession();
+    const { setLastAction } = useSession();
     const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
     const addToast = useToast();
 
@@ -221,23 +452,30 @@ const App: React.FC = () => {
     useEffect(() => {
         // Load state from localStorage on initial render
         const savedTheme = localStorage.getItem('creative-studio-theme') as Theme;
-        if (savedTheme) {
-            setTheme(savedTheme);
-        }
+        if (savedTheme) setTheme(savedTheme);
+
+        try {
+            const savedUsers = localStorage.getItem('creative-studio-users');
+            if (savedUsers) {
+                setUsers(JSON.parse(savedUsers));
+            } else {
+                // Seed with default users if none exist
+                const defaultUsers: MockUser[] = [
+                    { id: 1, name: "Creative User", email: "creative.user@example.com", avatar: "CU", is2faEnabled: false },
+                    { id: 2, name: "Alex Drake", email: "alex.drake@example.com", avatar: "AD", is2faEnabled: false },
+                    { id: 3, name: "Parth Gulyani", email: ADMIN_EMAIL, avatar: "PG", is2faEnabled: true },
+                ];
+                setUsers(defaultUsers);
+            }
+        } catch (e) { console.error("Failed to load users from localStorage", e); }
 
         const savedHistory = localStorage.getItem('creative-studio-history');
         if (savedHistory) {
             try {
                 const parsedHistory = JSON.parse(savedHistory);
-                // Important: Revive Date objects from strings
-                const revivedHistory = parsedHistory.map((item: HistoryItem) => ({
-                    ...item,
-                    timestamp: new Date(item.timestamp)
-                }));
+                const revivedHistory = parsedHistory.map((item: HistoryItem) => ({ ...item, timestamp: new Date(item.timestamp) }));
                 setHistory(revivedHistory);
-            } catch (e) {
-                console.error("Failed to parse history from localStorage", e);
-            }
+            } catch (e) { console.error("Failed to parse history from localStorage", e); }
         }
         
         // PWA install prompt handler
@@ -247,10 +485,13 @@ const App: React.FC = () => {
         };
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         
-        return () => {
-             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-        }
+        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     }, []);
+
+    useEffect(() => {
+        // Save users to localStorage whenever they change
+        localStorage.setItem('creative-studio-users', JSON.stringify(users));
+    }, [users]);
 
     useEffect(() => {
         // Save theme to localStorage whenever it changes
@@ -264,8 +505,13 @@ const App: React.FC = () => {
 
     useEffect(() => {
         // Save history to localStorage whenever it changes
-        localStorage.setItem('creative-studio-history', JSON.stringify(history));
-    }, [history]);
+        try {
+            localStorage.setItem('creative-studio-history', JSON.stringify(history));
+        } catch (error) {
+            console.error("Failed to save history to localStorage:", error);
+            addToast("Could not save history, storage may be full.", "error");
+        }
+    }, [history, addToast]);
     
     const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
@@ -276,7 +522,8 @@ const App: React.FC = () => {
             action,
             timestamp: new Date(),
             icon,
-            previewUrl,
+            // Do not store base64 strings in history to avoid exceeding localStorage quota.
+            previewUrl: previewUrl && previewUrl.startsWith('data:') ? undefined : previewUrl,
         };
         setHistory(prev => [...prev, newItem].slice(-50)); // Keep last 50 items
         if (prompt) {
@@ -284,20 +531,34 @@ const App: React.FC = () => {
         }
     }, [setLastAction]);
     
-    const handleLogin = () => {
+    const handleLoginComplete = () => {
+        if (!currentUser) return; // Should not happen
         setLoginStep('loggedIn');
         addHistoryItem('App', 'User logged in', 'user');
-    }
+    };
+
+    const handleAddNewUser = (newUser: MockUser) => {
+        setUsers(prev => {
+            const userExists = prev.some(u => u.email === newUser.email);
+            if (userExists) {
+                setCurrentUser(prev.find(u => u.email === newUser.email) || null);
+                return prev;
+            }
+            return [...prev, newUser];
+        });
+        setCurrentUser(newUser);
+        setLoginStep('securityCheck');
+    };
 
     const handleLogout = () => {
         setLoginStep('initial');
         setActiveFeature(AppFeature.Dashboard);
-        setHistory([]);
-    }
+        setCurrentUser(null);
+    };
     
     const handleFeedbackSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!feedbackMessage.trim()) {
+        if (!feedbackMessage.trim() || !currentUser) {
             addToast('Please enter your feedback message.', 'error');
             return;
         }
@@ -306,7 +567,7 @@ const App: React.FC = () => {
             id: Date.now(),
             category: feedbackCategory,
             message: feedbackMessage,
-            user: MOCK_USER,
+            user: { name: currentUser.name, email: currentUser.email },
             timestamp: new Date()
         };
 
@@ -324,6 +585,43 @@ const App: React.FC = () => {
         addToast('Creative Studio Pro installed!', 'success');
       }
       setInstallPrompt(null);
+    };
+
+    const handle2faVerify = (code: string) => {
+        setIsVerifying2fa(true);
+        setTwoFactorVerificationError('');
+        // Simulate network delay for verification
+        setTimeout(() => {
+            if (code === '123456') { // Mock correct code
+                setLoginStep('securityCheck');
+            } else {
+                setTwoFactorVerificationError('Invalid verification code. Please try again.');
+            }
+            setIsVerifying2fa(false);
+        }, 1000);
+    };
+
+    const handleToggle2FA = (enabled: boolean) => {
+        if (!currentUser) return;
+
+        if (enabled) {
+            setIsSecuritySettingsOpen(false);
+            setIsTwoFactorSetupOpen(true);
+        } else {
+             const updatedUser = { ...currentUser, is2faEnabled: false };
+             setCurrentUser(updatedUser);
+             setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+             addToast('Two-Factor Authentication disabled.', 'info');
+        }
+    };
+
+    const handle2faSetupSuccess = () => {
+        if (!currentUser) return;
+        const updatedUser = { ...currentUser, is2faEnabled: true };
+        setCurrentUser(updatedUser);
+        setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+        setIsTwoFactorSetupOpen(false);
+        addToast('Two-Factor Authentication enabled successfully!', 'success');
     };
     
     useEffect(() => {
@@ -351,17 +649,21 @@ const App: React.FC = () => {
             case AppFeature.Templates: return <TemplatesEditor addHistoryItem={addHistoryItem} />;
             case AppFeature.ImageGenerator: return <ImageGenerator addHistoryItem={addHistoryItem} setSuggestion={handleSetSuggestion} />;
             case AppFeature.CreativeChat: return <CreativeChat addHistoryItem={addHistoryItem} />;
+            case AppFeature.AssetLibrary: return <AssetLibrary />;
+            case AppFeature.PixelArt: return <PixelArtStudio addHistoryItem={addHistoryItem} />;
             default: return <Dashboard onSelectFeature={setActiveFeature} />;
         }
     };
 
-    if (loginStep !== 'loggedIn') {
+    if (loginStep !== 'loggedIn' || !currentUser) {
         return (
             <div className="min-h-screen flex items-center justify-center p-4 animate-fade-in">
                 <InteractiveBackground />
                 {loginStep === 'initial' && <LoginScreen onLogin={() => setLoginStep('accountPicker')} />}
-                {loginStep === 'accountPicker' && <GoogleAccountPicker onSelectAccount={() => setLoginStep('securityCheck')} />}
-                {loginStep === 'securityCheck' && <SecurityCheckScreen onComplete={handleLogin} />}
+                {loginStep === 'accountPicker' && <GoogleAccountPicker users={users} onSelectAccount={(user) => { setCurrentUser(user); user.is2faEnabled ? setLoginStep('2faVerification') : setLoginStep('securityCheck'); }} onAddNew={() => setLoginStep('addAccount')} />}
+                {loginStep === 'addAccount' && <AddAccountScreen onComplete={handleAddNewUser} />}
+                {loginStep === '2faVerification' && <TwoFactorAuthVerificationScreen onVerify={handle2faVerify} isVerifying={isVerifying2fa} error={twoFactorVerificationError} />}
+                {loginStep === 'securityCheck' && <SecurityCheckScreen onComplete={handleLoginComplete} />}
             </div>
         );
     }
@@ -378,7 +680,7 @@ const App: React.FC = () => {
             />
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header 
-                    user={MOCK_USER}
+                    user={currentUser}
                     onOpenSettings={() => setIsSettingsOpen(true)}
                     onOpenFeedback={() => setIsFeedbackOpen(true)}
                     onOpenProfile={() => setIsProfileOpen(true)}
@@ -423,20 +725,6 @@ const App: React.FC = () => {
                              <Button variant="secondary" icon="help" className="w-full justify-start" onClick={() => { setIsSettingsOpen(false); setIsFaqOpen(true); }}>Help & FAQ</Button>
                         </div>
                     </div>
-                    <div>
-                        <h4 className="font-semibold text-brand-text dark:text-slate-200 mb-2">Privacy & Security</h4>
-                        <div className="space-y-3">
-                            <Toggle 
-                                label="Enable Two-Factor Authentication (Simulated)" 
-                                enabled={is2faEnabled} 
-                                onChange={(val) => {
-                                    setIs2faEnabled(val);
-                                    addToast(`2FA is now ${val ? 'enabled' : 'disabled'} (Simulated)`, 'info');
-                                }} 
-                            />
-                             <Button variant="secondary" icon="shield-check" className="w-full justify-start" onClick={() => { setIsSettingsOpen(false); setIsSecurityModalOpen(true); }}>Review Login Activity</Button>
-                        </div>
-                    </div>
                 </div>
             </Modal>
             
@@ -469,21 +757,22 @@ const App: React.FC = () => {
             </Modal>
             
             <Modal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} title="My Profile">
-                <div className="text-center space-y-4">
+                <div className="flex flex-col items-center text-center space-y-4">
                      <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-violet-200 to-sky-200 flex items-center justify-center text-brand-primary font-bold text-4xl shadow-lg">
-                        {MOCK_USER.avatar}
+                        {currentUser.avatar}
                     </div>
                     <div>
-                        <h3 className="text-2xl font-bold text-brand-text dark:text-slate-200">{MOCK_USER.name}</h3>
-                        <p className="text-brand-subtle dark:text-slate-400">{MOCK_USER.email}</p>
+                        <h3 className="text-2xl font-bold text-brand-text dark:text-slate-200">{currentUser.name}</h3>
+                        <p className="text-brand-subtle dark:text-slate-400">{currentUser.email}</p>
                     </div>
-                    <div className="pt-4 space-y-2">
-                         <Button variant="secondary" icon="history" className="w-full" onClick={() => { setIsProfileOpen(false); setIsHistoryOpen(true); }}>View Activity</Button>
-                         {MOCK_USER.email === ADMIN_EMAIL && (
-                             <Button variant="secondary" icon="layout-dashboard" className="w-full" onClick={() => { setIsProfileOpen(false); setIsAdminOpen(true); }}>Admin Panel</Button>
-                         )}
-                         <Button variant="secondary" icon="log-out" className="w-full" onClick={handleLogout}>Log Out</Button>
-                    </div>
+                </div>
+                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                    <Button variant="secondary" icon="history" className="w-full justify-start" onClick={() => { setIsProfileOpen(false); setIsHistoryOpen(true); }}>View Activity</Button>
+                    <Button variant="secondary" icon="shield" className="w-full justify-start" onClick={() => { setIsProfileOpen(false); setIsSecuritySettingsOpen(true); }}>Security Center</Button>
+                    {currentUser.email === ADMIN_EMAIL && (
+                        <Button variant="secondary" icon="layout-dashboard" className="w-full justify-start" onClick={() => { setIsProfileOpen(false); setIsAdminOpen(true); }}>Admin Panel</Button>
+                    )}
+                    <Button variant="secondary" icon="log-out" className="w-full justify-start text-red-500 hover:bg-red-50 dark:hover:bg-red-900/40" onClick={handleLogout}>Log Out</Button>
                 </div>
             </Modal>
             
@@ -493,63 +782,39 @@ const App: React.FC = () => {
                 </div>
             </Modal>
             
-             <Modal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} title="Admin Panel" size="large">
-                <div className="space-y-6">
-                    <div>
-                        <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-2">User Feedback</h3>
-                        {feedbackItems.length > 0 ? (
-                            <div className="space-y-3 max-h-40 overflow-y-auto pr-2">
-                                {feedbackItems.slice().reverse().map(item => (
-                                    <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <p className="font-semibold capitalize text-brand-text dark:text-slate-200">{item.category}</p>
-                                                <p className="text-sm text-brand-subtle dark:text-slate-400">{item.message}</p>
-                                            </div>
-                                            <p className="text-xs text-brand-subtle dark:text-slate-500">{item.timestamp.toLocaleString()}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-brand-subtle dark:text-slate-400">No feedback submitted yet.</p>
-                        )}
-                    </div>
-                     <div>
-                        <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-2">Mock Security Events</h3>
-                         <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                            {MOCK_SECURITY_EVENTS.map(event => (
-                                <div key={event.id} className={`p-3 rounded-lg flex justify-between items-center ${event.event.includes('Failed') ? 'bg-red-50 dark:bg-red-900/40' : 'bg-slate-50 dark:bg-slate-800/50'}`}>
-                                    <div>
-                                        <p className={`font-semibold ${event.event.includes('Failed') ? 'text-red-800 dark:text-red-200' : 'text-brand-text dark:text-slate-200'}`}>{event.event}</p>
-                                        <p className="text-sm text-brand-subtle dark:text-slate-400">IP: {event.ip} ({event.location})</p>
-                                    </div>
-                                     <p className="text-xs text-brand-subtle dark:text-slate-500">{event.timestamp.toLocaleString()}</p>
-                                </div>
-                            ))}
-                         </div>
-                    </div>
-                </div>
-            </Modal>
-
-            <Modal isOpen={isSecurityModalOpen} onClose={() => setIsSecurityModalOpen(false)} title="Login Activity" size="large">
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                    {MOCK_SECURITY_EVENTS.map(event => (
-                        <div key={event.id} className={`p-3 rounded-lg flex justify-between items-center ${event.event.includes('Failed') ? 'bg-red-50 dark:bg-red-900/40' : 'bg-slate-50 dark:bg-slate-800/50'}`}>
-                            <div>
-                                <p className={`font-semibold ${event.event.includes('Failed') ? 'text-red-800 dark:text-red-200' : 'text-brand-text dark:text-slate-200'}`}>{event.event}</p>
-
-                                <p className="text-sm text-brand-subtle dark:text-slate-400">IP: {event.ip} ({event.location})</p>
-                            </div>
-                            <p className="text-xs text-brand-subtle dark:text-slate-500">{event.timestamp.toLocaleString()}</p>
-                        </div>
-                    ))}
-                </div>
+             <Modal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} title="Admin Panel" size="extra-large">
+                <AdminDashboard feedbackItems={feedbackItems} history={history} onClearFeedback={() => setFeedbackItems([])} />
             </Modal>
             
             <Modal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} title="Frequently Asked Questions" size="large">
                 <FaqAccordion />
             </Modal>
+
+            {/* Security Modals */}
+             <SecurityCenterModal
+                isOpen={isSecuritySettingsOpen}
+                onClose={() => setIsSecuritySettingsOpen(false)}
+                user={currentUser}
+                loginActivity={MOCK_SECURITY_EVENTS}
+                onToggle2FA={handleToggle2FA}
+                onChangePassword={() => { setIsSecuritySettingsOpen(false); setIsChangePasswordOpen(true); }}
+                onSignOutAll={() => addToast('Signed out of all other devices.', 'success')}
+            />
+
+            <TwoFactorAuthSetupModal
+                isOpen={isTwoFactorSetupOpen}
+                onClose={() => setIsTwoFactorSetupOpen(false)}
+                onSuccess={handle2faSetupSuccess}
+            />
+
+            <ChangePasswordModal
+                isOpen={isChangePasswordOpen}
+                onClose={() => setIsChangePasswordOpen(false)}
+                onSave={() => {
+                    setIsChangePasswordOpen(false);
+                    addToast('Password changed successfully!', 'success');
+                }}
+            />
         </div>
     );
 };

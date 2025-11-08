@@ -3,18 +3,29 @@ import Icon from './Icon';
 import Spinner from './Spinner';
 import { useSound } from '../../hooks/useSound';
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+type BaseProps = {
   children?: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'tool' | 'icon' | 'avatar';
   isLoading?: boolean;
   icon?: React.ComponentProps<typeof Icon>['name'];
-  as?: 'span';
-}
+  className?: string;
+};
 
-const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', isLoading = false, icon, className, as, ...props }) => {
-  const baseClasses = 'rounded-xl font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform-gpu hover:scale-105 active:scale-95';
-  
+type AsButton = BaseProps & { as?: 'button' } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, keyof BaseProps>;
+type AsAnchor = BaseProps & { as: 'a' } & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, keyof BaseProps>;
+type AsSpan = BaseProps & { as: 'span' } & Omit<React.HTMLAttributes<HTMLSpanElement>, keyof BaseProps>;
+
+type ButtonProps = AsButton | AsAnchor | AsSpan;
+
+const Button: React.FC<ButtonProps> = (props) => {
+  const { children, variant = 'primary', isLoading = false, icon, className, as, ...rest } = props;
+  const Tag: React.ElementType = as || 'button';
+
   const { playSound } = useSound();
+
+  const isDisabled = isLoading || ('disabled' in props && !!props.disabled);
+
+  const baseClasses = 'rounded-xl font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform-gpu hover:scale-105 active:scale-95';
 
   const variantClasses = {
     primary: 'px-6 py-3 bg-brand-primary text-white shadow-md hover:bg-violet-700 focus:ring-brand-primary button-glow',
@@ -24,10 +35,10 @@ const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', isLoadin
     avatar: 'p-0 w-10 h-10 rounded-full bg-gradient-to-br from-violet-200 to-sky-200 text-brand-primary font-bold shadow-sm focus:ring-brand-primary !hover:scale-110 !active:scale-100'
   };
 
-  const handleClick = (e: React.MouseEvent<HTMLButtonElement | HTMLSpanElement>) => {
+  const handleClick = (e: React.MouseEvent<HTMLElement>) => {
       playSound('click');
-      if (props.onClick && 'currentTarget' in e && e.currentTarget instanceof HTMLButtonElement) {
-        (props.onClick as React.MouseEventHandler<HTMLButtonElement>)(e as React.MouseEvent<HTMLButtonElement>);
+      if ('onClick' in props && typeof props.onClick === 'function') {
+        (props.onClick as React.MouseEventHandler<HTMLElement>)(e);
       }
   };
 
@@ -44,31 +55,18 @@ const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', isLoadin
     </>
   );
 
-  if (as === 'span') {
-    // Destructure out button-specific props that are invalid on a span
-    const { disabled, type, onClick, ...spanProps } = props;
-    const isDisabled = isLoading || disabled;
-    return (
-      <span
-        className={`${baseClasses} ${variantClasses[variant]} ${className} ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-        onClick={!isDisabled ? handleClick : undefined}
-        {...spanProps}
-      >
-        {content}
-      </span>
-    );
+  const allProps: any = {
+    className: `${baseClasses} ${variantClasses[variant]} ${className || ''}`,
+    onClick: !isDisabled ? handleClick : (e: React.MouseEvent<HTMLElement>) => e.preventDefault(),
+    'aria-disabled': isDisabled,
+    ...rest,
+  };
+
+  if (Tag === 'button') {
+    allProps.disabled = isDisabled;
   }
 
-  return (
-    <button
-      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
-      disabled={isLoading || props.disabled}
-      onClick={handleClick}
-      {...props}
-    >
-      {content}
-    </button>
-  );
+  return <Tag {...allProps}>{content}</Tag>;
 };
 
 export default Button;

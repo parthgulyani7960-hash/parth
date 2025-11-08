@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generateText } from '../services/geminiService';
-import { HistoryItem } from '../types';
+import { HistoryItem, ScriptScene } from '../types';
 import Card from './common/Card';
 import Button from './common/Button';
 import Icon, { InfoTooltip } from './common/Icon';
@@ -32,7 +32,7 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
   const [proofreadTone, setProofreadTone] = useState<ProofreadTone>('professional');
   const [transformFormat, setTransformFormat] = useState<TransformFormat>('tweet');
   const addToast = useToast();
-  const { lastAction, themeOfTheDay } = useSession();
+  const { lastAction, themeOfTheDay, setScriptForVideo } = useSession();
   
   useEffect(() => {
     setPrompt(`A short, engaging blog post about ${themeOfTheDay}.`);
@@ -64,7 +64,8 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
       if (currentMode === 'write' && customPrompt.trim()) {
         finalPrompt = `${prompt}\n\n---\nCustom Instructions:\n${customPrompt}`;
       }
-      const result = await generateText(currentMode, inputText, finalPrompt, { summaryLength, proofreadTone, transformFormat }, { lastAction });
+      // FIX: The `generateText` function expects 4 arguments, but 5 were provided. Merged the last two arguments into a single options object.
+      const result = await generateText(currentMode, inputText, finalPrompt, { summaryLength, proofreadTone, transformFormat, lastAction });
       setGeneratedText(result);
       setEditableGeneratedText(result);
       addHistoryItem('Text Lab', `Generated text in ${currentMode} mode`, 'text', undefined, finalPrompt);
@@ -95,6 +96,25 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
     if (!editableGeneratedText) return;
     navigator.clipboard.writeText(editableGeneratedText);
     addToast('Text copied to clipboard!', 'success');
+  };
+
+  const handleSendToVideo = () => {
+    const scenes: ScriptScene[] = [];
+    const sceneRegex = /SCENE\s+(\d+)\s*\n(.*?)\n([\s\S]*?)(?=SCENE|\Z)/gi;
+    let match;
+    while((match = sceneRegex.exec(editableGeneratedText)) !== null) {
+        scenes.push({
+            sceneNumber: parseInt(match[1]),
+            setting: match[2].trim(),
+            description: match[3].trim(),
+        });
+    }
+    if (scenes.length > 0) {
+        setScriptForVideo(scenes);
+        addToast('Script sent to Video Suite!', 'success');
+    } else {
+        addToast('Could not find scenes in the script. Make sure it follows standard script format (e.g., "SCENE 1").', 'error');
+    }
   };
 
 
@@ -189,7 +209,7 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
   return (
     <div className="max-w-6xl mx-auto">
       <h2 className="text-4xl font-bold text-center mb-2 dark:text-slate-100">AI Text Lab</h2>
-      <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Write, proofread, and transform text with an AI assistant.</p>
+      <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Write, proofread, and transform text with a real AI assistant.</p>
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <Card className="h-full">
@@ -227,7 +247,12 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
             <Card>
                  <div className="flex justify-between items-center mb-3">
                     <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200">AI Output</h3>
-                     {generatedText && <Button onClick={handleCopy} icon="scissors" variant="secondary">Copy</Button>}
+                     {generatedText && (
+                        <div className="flex gap-2">
+                           {mode === 'script' && <Button onClick={handleSendToVideo} icon="video" variant="secondary">Send to Video Suite</Button>}
+                           <Button onClick={handleCopy} icon="scissors" variant="secondary">Copy</Button>
+                        </div>
+                     )}
                  </div>
                  <div className="min-h-[200px] bg-white dark:bg-slate-800 p-4 rounded-lg">
                     {isLoading ? (

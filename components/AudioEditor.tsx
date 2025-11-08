@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, DragEvent } from 'react';
-import { generateSpeech, generateText, generateMusic, generateSfx, cleanupAudio } from '../services/geminiService';
-import { decode, encode, decodeAudioData } from '../utils/audio';
+import { generateSpeech, generateText } from '../services/geminiService';
+import { decode, pcmToWav } from '../utils/audio';
 import { HistoryItem } from '../types';
 import Card from './common/Card';
 import Button from './common/Button';
@@ -27,17 +27,12 @@ const voices = {
         { id: 'Zephyr', name: 'Zephyr (Calm, Male)' },
         { id: 'Puck', name: 'Puck (Energetic, Male)' },
         { id: 'Charon', name: 'Charon (Deep, Male)' },
-        { id: 'Aria', name: 'Aria (Narrator, Female)' },
-        { id: 'Leo', name: 'Leo (Storyteller, Male)' },
-        { id: 'Nova', name: 'Nova (Assistant, Female)' },
         { id: 'Fenrir', name: 'Fenrir (Epic, Male)' },
-        { id: 'Luna', name: 'Luna (Soothing, Female)' },
-        { id: 'Orion', name: 'Orion (Authoritative, Male)' },
     ]
 };
 
 const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
-    const [activeTab, setActiveTab] = useState<Tab>('transcribe');
+    const [activeTab, setActiveTab] = useState<Tab>('tts');
     const addToast = useToast();
 
     // Transcription state
@@ -52,8 +47,8 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
     const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
     const [isGeneratingDemo, setIsGeneratingDemo] = useState<string | null>(null);
     const [ttsError, setTtsError] = useState('');
-    const [generatedSpeechAudio, setGeneratedSpeechAudio] = useState<string | null>(null);
-    const outputAudioContextRef = useRef<AudioContext | null>(null);
+    const [generatedSpeechPcm, setGeneratedSpeechPcm] = useState<Uint8Array | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
     const [selectedVoice, setSelectedVoice] = useState('Kore');
     const [ttsEmotion, setTtsEmotion] = useState<Emotion>('Neutral');
     const [voiceEffect, setVoiceEffect] = useState<VoiceEffect>('none');
@@ -74,7 +69,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
     const [musicGenre, setMusicGenre] = useState('Electronic');
     const [musicDuration, setMusicDuration] = useState(30);
     const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
-    const [generatedMusic, setGeneratedMusic] = useState<string | null>(null);
     const [sfxPrompt, setSfxPrompt] = useState('Laser blast');
     const [isGeneratingSfx, setIsGeneratingSfx] = useState(false);
     const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
@@ -85,6 +79,42 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
     const [isAnalyzingStems, setIsAnalyzingStems] = useState(false);
     const [stems, setStems] = useState<{vocals: number, bass: number, drums: number, other: number} | null>(null);
     
+
+    const getAudioContext = useCallback(() => {
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        return audioContextRef.current;
+    }, []);
+
+    const playPcmData = useCallback(async (pcmData: Uint8Array, audioCtx: AudioContext, options: { pitch?: number, speed?: number, effect?: VoiceEffect } = {}) => {
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+
+        const sampleRate = 24000;
+        const numChannels = 1;
+        const frameCount = pcmData.length / 2; // 16-bit samples
+        const buffer = audioCtx.createBuffer(numChannels, frameCount, sampleRate);
+        const channelData = buffer.getChannelData(0);
+        const dataInt16 = new Int16Array(pcmData.buffer);
+
+        for (let i = 0; i < frameCount; i++) {
+            channelData[i] = dataInt16[i] / 32768.0;
+        }
+        
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = options.speed ?? 1;
+        source.detune.value = options.pitch ?? 0;
+
+        let lastNode: AudioNode = source;
+        // Connect effect nodes here if needed in the future
+        lastNode.connect(audioCtx.destination);
+        source.start();
+        return source;
+    }, []);
+
 
     // Cleanup on unmount
     useEffect(() => {
@@ -142,13 +172,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             };
 
             recognition.onend = () => {
-                // If it ends unexpectedly, and we are still in recording state, try to restart.
-                // This handles cases where the browser stops listening after a pause.
-                if (isRecording) {
-                    // But if the user intended to stop, we should not restart.
-                    // This logic can be tricky, so for this demo, we'll let the user restart manually.
-                    setIsRecording(false);
-                }
+                setIsRecording(false);
             };
 
             recognition.start();
@@ -158,7 +182,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             addToast('Microphone access was denied. Please allow it in your browser settings to use transcription.', 'error');
             setIsRecording(false);
         }
-    }, [addHistoryItem, addToast, stopTranscription, isRecording]); 
+    }, [addHistoryItem, addToast, stopTranscription]); 
 
     const handleSummarize = async () => {
         if (!transcription) return;
@@ -175,21 +199,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             setIsSummarizing(false);
         }
     };
-    
-    const playAudio = async (base64Audio: string) => {
-        if (!outputAudioContextRef.current || outputAudioContextRef.current.state === 'closed') {
-            outputAudioContextRef.current = new ((window as any).AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        }
-        const audioCtx = outputAudioContextRef.current;
-        if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
-        }
-        const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        source.start();
-    };
 
     const handleGenerateSpeech = useCallback(async () => {
         if (!ttsText.trim()) {
@@ -198,12 +207,13 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         }
         setIsGeneratingSpeech(true);
         setTtsError('');
-        setGeneratedSpeechAudio(null);
+        setGeneratedSpeechPcm(null);
 
         try {
             const base64Audio = await generateSpeech(ttsText, selectedVoice, ttsEmotion);
-            setGeneratedSpeechAudio(base64Audio);
-            await playAudioWithEffects(base64Audio);
+            const pcmData = decode(base64Audio);
+            setGeneratedSpeechPcm(pcmData);
+            await playPcmData(pcmData, getAudioContext(), { pitch, speed, effect: voiceEffect });
             addHistoryItem('Audio Studio', `Generated speech with ${selectedVoice} voice`, 'sound-wave');
         } catch (error) {
             console.error("Error generating speech:", error);
@@ -211,7 +221,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         } finally {
             setIsGeneratingSpeech(false);
         }
-    }, [ttsText, selectedVoice, ttsEmotion, addHistoryItem]);
+    }, [ttsText, selectedVoice, ttsEmotion, addHistoryItem, pitch, speed, voiceEffect, getAudioContext, playPcmData]);
 
     const handleVoiceDemo = async (voiceId: string) => {
         if (isGeneratingDemo) return;
@@ -219,7 +229,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         try {
             const demoText = "This is a demonstration of my voice.";
             const base64Audio = await generateSpeech(demoText, voiceId, 'Neutral');
-            await playAudio(base64Audio);
+            await playPcmData(decode(base64Audio), getAudioContext());
         } catch (error) {
             console.error(`Failed to play demo for ${voiceId}`, error);
             addToast(`Could not play demo for ${voiceId}.`, 'error');
@@ -227,90 +237,36 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             setIsGeneratingDemo(null);
         }
     };
-    
-    const playAudioWithEffects = async (base64Audio: string) => {
-       if (!outputAudioContextRef.current || outputAudioContextRef.current.state === 'closed') {
-            outputAudioContextRef.current = new ((window as any).AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        }
-        const audioCtx = outputAudioContextRef.current;
-        if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
-        }
-        
-        const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.playbackRate.value = speed;
-        source.detune.value = pitch;
-
-        let lastNode: AudioNode = source;
-
-        if (voiceEffect === 'chipmunk') {
-            source.playbackRate.value = speed * 1.7;
-        } else if (voiceEffect === 'robot') {
-             const distortion = audioCtx.createWaveShaper();
-             const gainNode = audioCtx.createGain();
-             const biquadFilter = audioCtx.createBiquadFilter();
-
-             biquadFilter.type = "lowshelf";
-             biquadFilter.frequency.value = 1000;
-             biquadFilter.gain.value = 25;
-             lastNode.connect(biquadFilter);
-             lastNode = biquadFilter;
-        } else if (voiceEffect === 'monster') {
-            source.playbackRate.value = speed * 0.7; // Slower for deep voice
-            source.detune.value = pitch - 500; // Lower pitch
-        } else if (voiceEffect === 'alien') {
-            const filter = audioCtx.createBiquadFilter();
-            filter.type = 'peaking';
-            filter.frequency.value = 3500;
-            filter.Q.value = 20;
-            filter.gain.value = 25;
-            lastNode.connect(filter);
-            lastNode = filter;
-        } else if (voiceEffect === 'deep') {
-            source.playbackRate.value = speed * 0.8;
-            source.detune.value = pitch - 800;
-        } else if (voiceEffect === 'radio') {
-            const radioFilter = audioCtx.createBiquadFilter();
-            radioFilter.type = 'bandpass';
-            radioFilter.frequency.value = 1500;
-            radioFilter.Q.value = 4;
-            lastNode.connect(radioFilter);
-            lastNode = radioFilter;
-        } else if (voiceEffect === 'echo') {
-            const delay = audioCtx.createDelay(0.5);
-            delay.delayTime.value = 0.3;
-            const feedback = audioCtx.createGain();
-            feedback.gain.value = 0.4;
-            
-            const masterGain = audioCtx.createGain();
-            lastNode.connect(masterGain);
-            masterGain.connect(audioCtx.destination);
-            
-            masterGain.connect(delay);
-            delay.connect(feedback);
-            feedback.connect(delay);
-            delay.connect(audioCtx.destination);
-            lastNode = masterGain;
-        }
-
-        if (voiceEffect !== 'echo') {
-          lastNode.connect(audioCtx.destination);
-        }
-        source.start();
-    };
 
     const handleApplyCleanup = async (options: { noise: number, deess: number, eq: number}) => {
-        if (!generatedSpeechAudio) {
+        if (!generatedSpeechPcm) {
             addToast('Please generate some speech first.', 'error');
             return;
         }
         setIsCleaning(true);
         try {
-            const cleanedAudio = await cleanupAudio(generatedSpeechAudio, options);
-            setGeneratedSpeechAudio(cleanedAudio);
-            addToast('AI Audio Cleanup applied!', 'success');
+            const audioCtx = getAudioContext();
+            const source = await playPcmData(generatedSpeechPcm, audioCtx, { pitch, speed });
+            
+            const compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.value = -50 + (options.noise / 2); // -50 (max reduction) to 0
+            compressor.ratio.value = 12;
+
+            const deEsser = audioCtx.createBiquadFilter();
+            deEsser.type = 'peaking';
+            deEsser.frequency.value = 6000;
+            deEsser.Q.value = 5;
+            deEsser.gain.value = -options.deess / 4; // -25 (max reduction) to 0
+
+            const eqFilter = audioCtx.createBiquadFilter();
+            eqFilter.type = 'highshelf';
+            eqFilter.frequency.value = 1000;
+            eqFilter.gain.value = options.eq / 10; // -10 to 10 db boost
+
+            source.disconnect();
+            source.connect(compressor).connect(deEsser).connect(eqFilter).connect(audioCtx.destination);
+            
+            addToast('AI Audio Cleanup preview applied!', 'success');
             addHistoryItem('Audio Studio', 'Applied AI audio cleanup', 'sound-wave');
         } catch (error) {
             console.error('Audio cleanup failed', error);
@@ -384,18 +340,40 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         }
     };
     
+    const playProceduralAudio = (type: 'music' | 'sfx', options: any) => {
+        const audioCtx = getAudioContext();
+        if (type === 'music') {
+             const oscillator = audioCtx.createOscillator();
+             oscillator.type = options.genre === 'Electronic' ? 'sawtooth' : 'sine';
+             oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
+             const gain = audioCtx.createGain();
+             gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + options.duration);
+             oscillator.connect(gain).connect(audioCtx.destination);
+             oscillator.start();
+             oscillator.stop(audioCtx.currentTime + options.duration);
+        } else { // sfx
+            const oscillator = audioCtx.createOscillator();
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(1000, audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.5);
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+            oscillator.connect(gain).connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.5);
+        }
+    };
+    
     const handleGenerateMusic = async () => {
         setIsGeneratingMusic(true);
-        setGeneratedMusic(null);
-        try {
-            const result = await generateMusic(musicMood, musicGenre, musicDuration);
-            setGeneratedMusic(result);
+        setTimeout(() => {
+            playProceduralAudio('music', { genre: musicGenre, duration: musicDuration });
             addHistoryItem('Audio Studio', `Generated ${musicGenre} music`, 'sound-wave');
-        } catch (error) {
-            console.error(error);
-        } finally {
             setIsGeneratingMusic(false);
-        }
+            addToast('Generated procedural music!', 'success');
+        }, 500);
     };
     
     const handleGenerateSfx = async () => {
@@ -404,15 +382,12 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             return;
         }
         setIsGeneratingSfx(true);
-        try {
-            const result = await generateSfx(sfxPrompt);
-            playAudio(result);
+        setTimeout(() => {
+            playProceduralAudio('sfx', {});
             addHistoryItem('Audio Studio', 'Generated a sound effect', 'sound-wave');
-        } catch (error) {
-            console.error(error);
-        } finally {
             setIsGeneratingSfx(false);
-        }
+            addToast('Generated procedural sound effect!', 'success');
+        }, 300);
     };
 
     const handleRemixFileDrop = (e: DragEvent<HTMLLabelElement>) => {
@@ -443,6 +418,27 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         }, 2000);
     };
 
+    const handleDownloadSpeech = () => {
+        if (!generatedSpeechPcm) {
+            addToast('No generated speech to download.', 'error');
+            return;
+        }
+        try {
+            const blob = pcmToWav(generatedSpeechPcm, 1, 24000);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'generated_speech.wav';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            addToast('Download started!', 'success');
+        } catch (e) {
+            console.error(e);
+            addToast('Failed to prepare download.', 'error');
+        }
+    };
 
     const renderTranscriber = () => (
         <div className="flex flex-col items-center space-y-6">
@@ -581,18 +577,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                 <Slider label="Pitch" min={-1200} max={1200} step={50} value={pitch} onChange={(e) => setPitch(Number(e.target.value))} />
                 <Slider label="Speed" min={0.5} max={2} step={0.1} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-brand-text dark:text-slate-300 mb-2">
-                AI Voice Changer
-                <InfoTooltip className="ml-1">Apply fun, real-time effects to the generated voice.</InfoTooltip>
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {(['none', 'chipmunk', 'robot', 'deep', 'monster', 'alien', 'radio', 'echo'] as VoiceEffect[]).map(effect => (
-                  <Button key={effect} variant={voiceEffect === effect ? 'primary' : 'secondary'} onClick={() => setVoiceEffect(effect)} className="w-full !text-xs capitalize !px-2 !py-2">{effect}</Button>
-                ))}
-              </div>
-            </div>
-            <div className="border-t dark:border-slate-700 pt-6">
+             <div className="border-t dark:border-slate-700 pt-6">
                 <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-3 flex items-center gap-2">
                     AI Audio Cleanup
                     <InfoTooltip>After generating speech, use these tools to automatically reduce background noise, remove harsh "s" sounds (de-essing), and balance the voice tone (EQ).</InfoTooltip>
@@ -602,23 +587,18 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                      <Slider label="De-Essing" min={0} max={100} step={1} value={deEss} onChange={(e) => setDeEss(Number(e.target.value))} />
                      <Slider label="Voice EQ" min={-100} max={100} step={1} value={voiceEq} onChange={(e) => setVoiceEq(Number(e.target.value))} />
                      <div className="grid grid-cols-2 gap-2">
-                         <Button onClick={handleAutoCleanup} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechAudio} icon="sparkles" variant="secondary" className="w-full">Auto Cleanup</Button>
-                         <Button onClick={() => handleApplyCleanup({ noise: noiseReduction, deess: deEss, eq: voiceEq })} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechAudio} icon="wand" variant="secondary" className="w-full">Apply Manual</Button>
+                         <Button onClick={handleAutoCleanup} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechPcm} icon="sparkles" variant="secondary" className="w-full">Auto Cleanup</Button>
+                         <Button onClick={() => handleApplyCleanup({ noise: noiseReduction, deess: deEss, eq: voiceEq })} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechPcm} icon="wand" variant="secondary" className="w-full">Apply Manual</Button>
                      </div>
                 </div>
             </div>
-             <div className="relative border-t dark:border-slate-700 pt-6">
+             <div className="relative border-t dark:border-slate-700 pt-6 flex gap-2">
                 <Button onClick={handleGenerateSpeech} isLoading={isGeneratingSpeech} disabled={isGeneratingSpeech || !!isGeneratingDemo} icon="play" className="w-full">
                     Generate & Play Speech
                 </Button>
-                {isGeneratingSpeech && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-xl">
-                        <div className="flex items-center gap-2 text-brand-subtle dark:text-slate-400">
-                             <Spinner />
-                            <span>Generating...</span>
-                        </div>
-                    </div>
-                )}
+                <Button onClick={handleDownloadSpeech} disabled={!generatedSpeechPcm} icon="download" variant="secondary">
+                    Download
+                </Button>
             </div>
         </div>
     );
@@ -638,12 +618,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                             <option>Calm</option>
                             <option>Energetic</option>
                             <option>Tense</option>
-                            <option>Uplifting</option>
-                            <option>Mysterious</option>
-                            <option>Romantic</option>
-                            <option>Funky</option>
-                            <option>Dramatic</option>
-                            <option>Dreamy</option>
                         </select>
                     </div>
                      <div>
@@ -653,14 +627,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                             <option>Cinematic</option>
                             <option>Acoustic</option>
                             <option>Lo-fi</option>
-                            <option>Ambient</option>
-                            <option>Orchestral</option>
-                            <option>Rock</option>
-                            <option>Jazz</option>
-                            <option>Hip Hop</option>
-                            <option>Pop</option>
-                            <option>Synthwave</option>
-                            <option>Folk</option>
                         </select>
                     </div>
                 </div>
@@ -668,11 +634,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                      <Slider label={`Duration: ${musicDuration}s`} min={10} max={180} step={5} value={musicDuration} onChange={e => setMusicDuration(Number(e.target.value))} />
                 </div>
                 <Button onClick={handleGenerateMusic} isLoading={isGeneratingMusic} disabled={isGeneratingMusic} icon="music" className="w-full mt-4">Generate Music</Button>
-                {generatedMusic && (
-                    <div className="mt-4 animate-fade-in">
-                        <audio controls src={`data:audio/wav;base64,${generatedMusic}`} className="w-full"></audio>
-                    </div>
-                )}
             </div>
              <div className="border-t dark:border-slate-700 pt-6">
                 <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-3">Sound Effects (SFX)</h3>
@@ -737,12 +698,11 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             <Card>
                 <div className="mb-6 border-b border-slate-200 dark:border-slate-700">
                     <nav className="flex -mb-px gap-6">
-                        <button onClick={() => setActiveTab('transcribe')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'transcribe' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>Transcribe</button>
                         <button onClick={() => setActiveTab('tts')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'tts' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>AI Voice Actor</button>
+                        <button onClick={() => setActiveTab('transcribe')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'transcribe' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>Transcribe</button>
                         <button onClick={() => setActiveTab('music')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'music' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>AI Music</button>
                         <button onClick={() => setActiveTab('remixer')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'remixer' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>
                             AI Music Remixer
-                            <InfoTooltip className="ml-1">Upload a song and the AI will attempt to separate it into stems like vocals, bass, and drums, allowing you to remix them.</InfoTooltip>
                         </button>
                     </nav>
                 </div>

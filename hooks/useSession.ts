@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useMemo, FC, ReactNode } from 'react';
-import { AppFeature } from '../types';
+import { AppFeature, ScriptScene } from '../types';
 
 type LastAction = {
     feature: AppFeature;
@@ -10,6 +10,8 @@ interface SessionContextType {
   lastAction: LastAction | null;
   setLastAction: (action: LastAction) => void;
   themeOfTheDay: string;
+  scriptForVideo: ScriptScene[] | null;
+  setScriptForVideo: (scenes: ScriptScene[] | null) => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -22,6 +24,7 @@ const creativeThemes = [
 
 export const SessionProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const [lastAction, setLastAction] = useState<LastAction | null>(null);
+    const [scriptForVideo, setScriptForVideo] = useState<ScriptScene[] | null>(null);
     
     const themeOfTheDay = useMemo(() => {
         return creativeThemes[Math.floor(Math.random() * creativeThemes.length)];
@@ -30,16 +33,14 @@ export const SessionProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const value = {
         lastAction,
         setLastAction,
-        themeOfTheDay
+        themeOfTheDay,
+        scriptForVideo,
+        setScriptForVideo,
     };
 
-    // FIX: Replaced JSX syntax with React.createElement to avoid parsing errors in a .ts file.
-    // JSX syntax should only be used in .tsx files.
-    return React.createElement(
-        SessionContext.Provider,
-        { value: value },
-        children
-      );
+    // FIX: Replaced JSX with React.createElement to be compatible with a .ts file extension.
+    // JSX syntax is not supported in .ts files by default.
+    return React.createElement(SessionContext.Provider, { value: value }, children);
 };
 
 export const useSession = () => {

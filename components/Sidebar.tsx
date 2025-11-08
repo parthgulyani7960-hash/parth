@@ -12,9 +12,11 @@ interface SidebarProps {
 
 const features = [
   { id: AppFeature.Dashboard, name: 'Dashboard', icon: 'layout-dashboard' as const },
+  { id: AppFeature.AssetLibrary, name: 'Asset Library', icon: 'folder' as const },
   { id: AppFeature.Photo, name: 'Photo Lab', icon: 'photo' as const },
   { id: AppFeature.Video, name: 'Video Suite', icon: 'video' as const },
   { id: AppFeature.ImageGenerator, name: 'Image Generator', icon: 'sparkles' as const },
+  { id: AppFeature.PixelArt, name: 'Pixel Art Studio', icon: 'layout-grid' as const },
   { id: AppFeature.Audio, name: 'Audio Studio', icon: 'sound-wave' as const },
   { id: AppFeature.Text, name: 'Text Lab', icon: 'text' as const },
   { id: AppFeature.Templates, name: 'Templates', icon: 'template' as const },

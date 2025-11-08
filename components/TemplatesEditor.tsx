@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { HistoryItem } from '../types';
 import Card from './common/Card';
 import Icon, { InfoTooltip } from './common/Icon';
@@ -58,7 +58,7 @@ interface BrandKit {
 }
 
 const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('browse');
+  const [activeTab, setActiveTab] = useState<Tab>('generate');
   
   // Browser state
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory>('All');
@@ -83,6 +83,7 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
 
   const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
   const addToast = useToast();
+  const downloadCanvasRef = useRef<HTMLCanvasElement>(null);
 
   
   const handleGenerate = async () => {
@@ -161,6 +162,23 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
       }
   }
 
+  const handleDownloadTemplate = (base64Image: string) => {
+    const img = new Image();
+    img.src = `data:image/jpeg;base64,${base64Image}`;
+    img.onload = () => {
+        const canvas = downloadCanvasRef.current;
+        if (!canvas) return;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        const link = document.createElement('a');
+        link.download = 'generated-template.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    };
+  };
 
   const filteredTemplates = useMemo(() => {
     let templates = mockTemplates;
@@ -300,9 +318,10 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
                             {isGenerating && <div className="aspect-square bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center"><Spinner/></div>}
                             {generatedTemplates.map((template, index) => (
                                <div key={index} className="group relative aspect-square">
-                                    <img src={`data:image/svg+xml;base64,${template}`} alt={`Generated template ${index + 1}`} className="w-full h-full object-contain rounded-lg bg-white dark:bg-slate-700" />
-                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <img src={`data:image/jpeg;base64,${template}`} alt={`Generated template ${index + 1}`} className="w-full h-full object-contain rounded-lg bg-white dark:bg-slate-700" />
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                         <Button variant="secondary" icon="sparkles" onClick={() => openGeneratedRemixModal(template)}>Remix</Button>
+                                        <Button variant="secondary" icon="download" onClick={() => handleDownloadTemplate(template)}>PNG</Button>
                                     </div>
                                </div>
                             ))}
@@ -338,7 +357,7 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
                                 setCompanyName(e.target.value);
                                 if (validationErrors.companyName) setValidationErrors({});
                             }}
-                            className={`w-full p-2 border rounded-lg dark:bg-slate-700 ${validationErrors.companyName ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+                            className={`w-full p-2 border rounded-lg dark:bg-slate-800 ${validationErrors.companyName ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
                         />
                          {validationErrors.companyName && <p className="text-red-500 text-xs mt-1">{validationErrors.companyName}</p>}
                     </div>
@@ -351,7 +370,7 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
                                 if (validationErrors.companyDesc) setValidationErrors({});
                             }}
                             rows={4}
-                            className={`w-full p-2 border rounded-lg dark:bg-slate-700 ${validationErrors.companyDesc ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+                            className={`w-full p-2 border rounded-lg dark:bg-slate-800 ${validationErrors.companyDesc ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
                         />
                          {validationErrors.companyDesc && <p className="text-red-500 text-xs mt-1">{validationErrors.companyDesc}</p>}
                     </div>
@@ -373,14 +392,20 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
                     ) : brandKit ? (
                         <div className="w-full space-y-6 animate-fade-in">
                             <div>
-                                <h4 className="font-semibold dark:text-slate-300 mb-2">Logos</h4>
+                                <div className="flex justify-between items-center mb-2">
+                                    <h4 className="font-semibold dark:text-slate-300">Logos</h4>
+                                    <Button variant="secondary" onClick={handleGenerateBrandKit} className="!text-xs !py-1">Regenerate</Button>
+                                </div>
                                 <div className="flex gap-4 items-center">
-                                    <img src={`data:image/svg+xml;base64,${brandKit.logos.primary}`} alt="Primary Logo" className="bg-white rounded-lg p-2 shadow-md"/>
-                                    <img src={`data:image/svg+xml;base64,${brandKit.logos.secondary}`} alt="Secondary Logo" className="bg-white rounded-full w-20 h-20 p-2 shadow-md"/>
+                                    <img src={`data:image/png;base64,${brandKit.logos.primary}`} alt="Primary Logo" className="bg-white rounded-lg p-2 shadow-md w-24 h-24 object-contain"/>
+                                    <img src={`data:image/png;base64,${brandKit.logos.secondary}`} alt="Secondary Logo" className="bg-white rounded-full w-20 h-20 p-2 shadow-md object-contain"/>
                                 </div>
                             </div>
                             <div>
-                                <h4 className="font-semibold dark:text-slate-300 mb-2">Color Palette</h4>
+                                <div className="flex justify-between items-center mb-2">
+                                    <h4 className="font-semibold dark:text-slate-300">Color Palette</h4>
+                                    <Button variant="secondary" onClick={handleGenerateBrandKit} className="!text-xs !py-1">Regenerate</Button>
+                                </div>
                                 <div className="flex gap-2">
                                     {brandKit.colors.map((color, i) => (
                                         <div key={i} className="w-12 h-12 rounded-full border-2 border-white dark:border-slate-600" style={{ backgroundColor: color }} />
@@ -404,6 +429,9 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
 
   return (
     <div className="max-w-7xl mx-auto">
+      {/* Hidden canvas for PNG downloads */}
+      <canvas ref={downloadCanvasRef} className="hidden"></canvas>
+
       <h2 className="text-4xl font-bold text-center mb-2 dark:text-slate-100">AI Template Studio</h2>
       <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Browse pre-made templates or generate new ones with AI.</p>
       
