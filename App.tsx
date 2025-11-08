@@ -54,6 +54,14 @@ type MockUser = {
     is2faEnabled?: boolean;
 };
 
+const GUEST_USER: MockUser = {
+    id: 0,
+    name: "Guest User",
+    email: "guest@example.com",
+    avatar: "GU",
+    is2faEnabled: false,
+};
+
 const ADMIN_EMAIL = "parthgulyani7960@gmail.com";
 
 const MOCK_SECURITY_EVENTS = [
@@ -63,7 +71,7 @@ const MOCK_SECURITY_EVENTS = [
 ];
 
 
-const LoginScreen: React.FC<{ onLogin: () => void; }> = ({ onLogin }) => {
+const LoginScreen: React.FC<{ onLogin: () => void; onGuestLogin: () => void; }> = ({ onLogin, onGuestLogin }) => {
   return (
     <Card className="max-w-md w-full text-center">
         <Icon name="brand" className="w-16 h-16 text-brand-primary mx-auto mb-4" />
@@ -73,13 +81,20 @@ const LoginScreen: React.FC<{ onLogin: () => void; }> = ({ onLogin }) => {
         <p className="mt-4 text-xl text-brand-subtle dark:text-slate-400">
           Your all-in-one AI-powered creative suite.
         </p>
-        <div className="mt-12">
+        <div className="mt-12 space-y-4">
           <Button 
             onClick={onLogin} 
             className="w-full !py-4 text-lg"
           >
             <svg className="w-6 h-6 mr-3" viewBox="0 0 48 48" width="48px" height="48px"><defs><path id="a" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/></defs><clipPath id="b"><use xlinkHref="#a" overflow="visible"/></clipPath><path clipPath="url(#b)" fill="#FBBC05" d="M0 37V11l17 13z"/><path clipPath="url(#b)" fill="#EA4335" d="M0 11l17 13 7-6.1L48 14V0H0z"/><path clipPath="url(#b)" fill="#34A853" d="M0 37l30-23.5L48 14v28H0z"/><path clipPath="url(#b)" fill="#4285F4" d="M48 48L17 24l-4-3.4L48 0z"/></svg>
-            Continue with Google
+            Continue
+          </Button>
+          <Button 
+            onClick={onGuestLogin}
+            variant="secondary"
+            className="w-full !py-4 text-lg"
+          >
+            Continue as Guest
           </Button>
         </div>
       </Card>
@@ -537,6 +552,11 @@ const App: React.FC = () => {
         addHistoryItem('App', 'User logged in', 'user');
     };
 
+    const handleGuestLogin = () => {
+        setCurrentUser(GUEST_USER);
+        setLoginStep('securityCheck');
+    };
+
     const handleAddNewUser = (newUser: MockUser) => {
         setUsers(prev => {
             const userExists = prev.some(u => u.email === newUser.email);
@@ -659,7 +679,7 @@ const App: React.FC = () => {
         return (
             <div className="min-h-screen flex items-center justify-center p-4 animate-fade-in">
                 <InteractiveBackground />
-                {loginStep === 'initial' && <LoginScreen onLogin={() => setLoginStep('accountPicker')} />}
+                {loginStep === 'initial' && <LoginScreen onLogin={() => setLoginStep('accountPicker')} onGuestLogin={handleGuestLogin} />}
                 {loginStep === 'accountPicker' && <GoogleAccountPicker users={users} onSelectAccount={(user) => { setCurrentUser(user); user.is2faEnabled ? setLoginStep('2faVerification') : setLoginStep('securityCheck'); }} onAddNew={() => setLoginStep('addAccount')} />}
                 {loginStep === 'addAccount' && <AddAccountScreen onComplete={handleAddNewUser} />}
                 {loginStep === '2faVerification' && <TwoFactorAuthVerificationScreen onVerify={handle2faVerify} isVerifying={isVerifying2fa} error={twoFactorVerificationError} />}
