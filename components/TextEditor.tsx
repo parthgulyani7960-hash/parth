@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { generateText } from '../services/geminiService';
 import { HistoryItem } from '../types';
 import Card from './common/Card';
@@ -6,6 +6,7 @@ import Button from './common/Button';
 import Icon, { InfoTooltip } from './common/Icon';
 import Spinner from './common/Spinner';
 import { useToast } from '../hooks/useToast';
+import { useSession } from '../hooks/useSession';
 
 type Mode = 'write' | 'proofread' | 'summarize' | 'poem' | 'transform' | 'script';
 type SummaryLength = 'short' | 'medium' | 'long';
@@ -13,13 +14,13 @@ type ProofreadTone = 'formal' | 'casual' | 'professional';
 type TransformFormat = 'tweet' | 'email' | 'slides';
 
 interface TextEditorProps {
-  addHistoryItem: (featureName: string, action: string, icon: HistoryItem['icon'], previewUrl?: string) => void;
+  addHistoryItem: (featureName: string, action: string, icon: HistoryItem['icon'], previewUrl?: string, prompt?: string) => void;
 }
 
 const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
   const [mode, setMode] = useState<Mode>('write');
   const [inputText, setInputText] = useState<string>('');
-  const [prompt, setPrompt] = useState<string>('A short, engaging blog post about the future of AI in creative industries.');
+  const [prompt, setPrompt] = useState<string>('');
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [generatedText, setGeneratedText] = useState<string>('');
   const [editableGeneratedText, setEditableGeneratedText] = useState('');
@@ -31,6 +32,12 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
   const [proofreadTone, setProofreadTone] = useState<ProofreadTone>('professional');
   const [transformFormat, setTransformFormat] = useState<TransformFormat>('tweet');
   const addToast = useToast();
+  const { lastAction, themeOfTheDay } = useSession();
+  
+  useEffect(() => {
+    setPrompt(`A short, engaging blog post about ${themeOfTheDay}.`);
+  }, [themeOfTheDay]);
+
 
   const validate = (currentMode: Mode) => {
     const newErrors: { [key: string]: string } = {};
@@ -57,10 +64,10 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
       if (currentMode === 'write' && customPrompt.trim()) {
         finalPrompt = `${prompt}\n\n---\nCustom Instructions:\n${customPrompt}`;
       }
-      const result = await generateText(currentMode, inputText, finalPrompt, { summaryLength, proofreadTone, transformFormat });
+      const result = await generateText(currentMode, inputText, finalPrompt, { summaryLength, proofreadTone, transformFormat }, { lastAction });
       setGeneratedText(result);
       setEditableGeneratedText(result);
-      addHistoryItem('Text Lab', `Generated text in ${currentMode} mode`, 'text');
+      addHistoryItem('Text Lab', `Generated text in ${currentMode} mode`, 'text', undefined, finalPrompt);
     } catch (err) {
       console.error(err);
       setError('An error occurred while generating text. Please try again.');
@@ -72,11 +79,11 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
   const handleModeChange = (newMode: Mode) => {
     setMode(newMode);
     if (newMode === 'poem') {
-      setPrompt('The beauty of a sunset over the ocean.');
+      setPrompt(`A beautiful poem about ${themeOfTheDay}.`);
     } else if (newMode === 'write') {
-      setPrompt('A short, engaging blog post about the future of AI in creative industries.');
+      setPrompt(`A short, engaging blog post about ${themeOfTheDay}.`);
     } else if (newMode === 'script') {
-        setPrompt('A lone detective discovers a hidden clue in a rainy, neon-lit city.');
+        setPrompt(`A movie scene set in a world based on ${themeOfTheDay}.`);
     }
     setGeneratedText('');
     setEditableGeneratedText('');
@@ -181,7 +188,8 @@ const TextEditor: React.FC<TextEditorProps> = ({ addHistoryItem }) => {
 
   return (
     <div className="max-w-6xl mx-auto">
-      <h2 className="text-3xl font-bold text-center mb-8 dark:text-slate-200">AI Text Lab</h2>
+      <h2 className="text-4xl font-bold text-center mb-2 dark:text-slate-100">AI Text Lab</h2>
+      <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Write, proofread, and transform text with an AI assistant.</p>
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <Card className="h-full">

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, DragEvent } from 'react';
-import { generateSpeech, mockLiveConnect, generateText, generateMusic, generateSfx, cleanupAudio } from '../services/geminiService';
+import { generateSpeech, generateText, generateMusic, generateSfx, cleanupAudio } from '../services/geminiService';
 import { decode, encode, decodeAudioData } from '../utils/audio';
 import { HistoryItem } from '../types';
 import Card from './common/Card';
@@ -10,38 +10,15 @@ import Spinner from './common/Spinner';
 import Slider from './common/Slider';
 import { useToast } from '../hooks/useToast';
 
+// Reference to the SpeechRecognition API
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
 type Tab = 'transcribe' | 'tts' | 'music' | 'remixer';
 type VoiceEffect = 'none' | 'chipmunk' | 'robot' | 'echo' | 'monster' | 'alien' | 'deep' | 'radio';
 type Emotion = 'Neutral' | 'Happy' | 'Sad' | 'Angry' | 'Excited' | 'Calm';
 
-// Minimal types to support mock functions without full SDK import
-type LiveServerMessage = {
-  serverContent?: {
-    inputTranscription?: { text: string };
-    modelTurn?: { parts: [{ inlineData: { data: string } }] };
-  };
-};
-
-type LiveSession = {
-  close: () => void;
-  sendRealtimeInput: (input: any) => void;
-};
-
 interface AudioEditorProps {
   addHistoryItem: (featureName: string, action: string, icon: HistoryItem['icon'], previewUrl?: string) => void;
-}
-
-// Helper function to create audio blobs for the mock live connection
-function createBlob(data: Float32Array): { data: string; mimeType: string } {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
-  }
-  return {
-    data: encode(new Uint8Array(int16.buffer)),
-    mimeType: 'audio/pcm;rate=16000',
-  };
 }
 
 const voices = {
@@ -61,13 +38,14 @@ const voices = {
 
 const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
     const [activeTab, setActiveTab] = useState<Tab>('transcribe');
+    const addToast = useToast();
 
     // Transcription state
     const [isRecording, setIsRecording] = useState(false);
     const [transcription, setTranscription] = useState<string>('');
     const [summary, setSummary] = useState('');
     const [isSummarizing, setIsSummarizing] = useState(false);
-    const sessionRef = useRef<Partial<LiveSession> | null>(null);
+    const recognitionRef = useRef<any | null>(null);
 
     // TTS state
     const [ttsText, setTtsText] = useState("Hello! I am a powerful AI voice from Google. What would you like me to say?");
@@ -83,6 +61,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
     const [speed, setSpeed] = useState(1);
     const [customVoiceName, setCustomVoiceName] = useState<string | null>(null);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [isCloningVoice, setIsCloningVoice] = useState(false);
     
     // AI Audio Cleanup State
     const [noiseReduction, setNoiseReduction] = useState(0);
@@ -105,60 +84,81 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
     const [remixFileUrl, setRemixFileUrl] = useState<string | null>(null);
     const [isAnalyzingStems, setIsAnalyzingStems] = useState(false);
     const [stems, setStems] = useState<{vocals: number, bass: number, drums: number, other: number} | null>(null);
-    const addToast = useToast();
+    
 
     // Cleanup on unmount
     useEffect(() => {
         return () => {
-            if (sessionRef.current && sessionRef.current.close) {
-                sessionRef.current.close();
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
             }
         };
     }, []);
 
     const stopTranscription = useCallback(() => {
-        setIsRecording(false);
-        if (sessionRef.current && sessionRef.current.close) {
-            sessionRef.current.close();
-            sessionRef.current = null;
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            recognitionRef.current = null;
         }
+        setIsRecording(false);
     }, []);
 
     const startTranscription = useCallback(async () => {
-        setIsRecording(true);
-        setTranscription('');
-        setSummary('');
+        if (!SpeechRecognition) {
+            addToast("Real-time transcription is not supported in this browser.", 'error');
+            return;
+        }
 
         try {
             await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            const callbacks = {
-                onopen: () => {
-                  console.log('Live session opened.');
-                  addHistoryItem('Audio Studio', 'Started live transcription', 'sound-wave');
-                },
-                onmessage: (message: LiveServerMessage) => {
-                    if (message.serverContent?.inputTranscription) {
-                        setTranscription(prev => prev + message.serverContent.inputTranscription.text);
+            setIsRecording(true);
+            setTranscription('');
+            setSummary('');
+
+            const recognition = new SpeechRecognition();
+            recognitionRef.current = recognition;
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            let finalTranscript = '';
+
+            recognition.onresult = (event: any) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
                     }
-                },
-                onerror: (e: ErrorEvent) => {
-                    console.error('Live session error:', e);
-                    stopTranscription();
-                },
-                onclose: () => {
-                    console.log('Live session closed.');
-                },
+                }
+                setTranscription(finalTranscript + interimTranscript);
             };
             
-            const sessionPromise = mockLiveConnect(callbacks);
-            sessionRef.current = await sessionPromise;
+            recognition.onerror = (event: any) => {
+                addToast(`Transcription error: ${event.error}`, 'error');
+                stopTranscription();
+            };
 
+            recognition.onend = () => {
+                // If it ends unexpectedly, and we are still in recording state, try to restart.
+                // This handles cases where the browser stops listening after a pause.
+                if (isRecording) {
+                    // But if the user intended to stop, we should not restart.
+                    // This logic can be tricky, so for this demo, we'll let the user restart manually.
+                    setIsRecording(false);
+                }
+            };
+
+            recognition.start();
+            addHistoryItem('Audio Studio', 'Started live transcription', 'sound-wave');
         } catch (error) {
-            console.error('Failed to start recording:', error);
+            console.error('Failed to get microphone access:', error);
+            addToast('Microphone access was denied. Please allow it in your browser settings to use transcription.', 'error');
             setIsRecording(false);
         }
-    }, [stopTranscription, addHistoryItem]); 
+    }, [addHistoryItem, addToast, stopTranscription, isRecording]); 
 
     const handleSummarize = async () => {
         if (!transcription) return;
@@ -176,7 +176,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         }
     };
     
-    const playAudio = async (base64Audio: string, pitchShift = 0, playbackRate = 1) => {
+    const playAudio = async (base64Audio: string) => {
         if (!outputAudioContextRef.current || outputAudioContextRef.current.state === 'closed') {
             outputAudioContextRef.current = new ((window as any).AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         }
@@ -187,8 +187,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
-        source.playbackRate.value = playbackRate;
-        source.detune.value = pitchShift;
         source.connect(audioCtx.destination);
         source.start();
     };
@@ -219,7 +217,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         if (isGeneratingDemo) return;
         setIsGeneratingDemo(voiceId);
         try {
-            const demoText = ttsText.trim() ? ttsText : "Hello, this is a demonstration of my voice.";
+            const demoText = "This is a demonstration of my voice.";
             const base64Audio = await generateSpeech(demoText, voiceId, 'Neutral');
             await playAudio(base64Audio);
         } catch (error) {
@@ -303,18 +301,14 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         source.start();
     };
 
-    const handleApplyCleanup = async () => {
+    const handleApplyCleanup = async (options: { noise: number, deess: number, eq: number}) => {
         if (!generatedSpeechAudio) {
             addToast('Please generate some speech first.', 'error');
             return;
         }
         setIsCleaning(true);
         try {
-            const cleanedAudio = await cleanupAudio(generatedSpeechAudio, {
-                noise: noiseReduction,
-                deess: deEss,
-                eq: voiceEq
-            });
+            const cleanedAudio = await cleanupAudio(generatedSpeechAudio, options);
             setGeneratedSpeechAudio(cleanedAudio);
             addToast('AI Audio Cleanup applied!', 'success');
             addHistoryItem('Audio Studio', 'Applied AI audio cleanup', 'sound-wave');
@@ -325,20 +319,39 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         }
     };
     
+    const handleAutoCleanup = () => {
+        const autoSettings = { noise: 70, deess: 50, eq: 15 };
+        setNoiseReduction(autoSettings.noise);
+        setDeEss(autoSettings.deess);
+        setVoiceEq(autoSettings.eq);
+        handleApplyCleanup(autoSettings);
+    };
+    
     const processVoiceFile = (file: File) => {
         if (file.size > 10 * 1024 * 1024) { // 10MB limit
+            addToast("File size exceeds 10MB limit.", 'error');
             setTtsError("File size exceeds 10MB limit.");
             return;
         }
         if (!['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/x-wav'].includes(file.type)) {
+            addToast("Please upload a valid audio file (MP3, WAV).", 'error');
             setTtsError("Please upload a valid audio file (MP3, WAV).");
             return;
         }
         setTtsError('');
-        setCustomVoiceName(file.name);
-        setSelectedVoice(file.name); // Auto-select the custom voice
-        addHistoryItem('Audio Studio', 'Cloned a voice from sample', 'sound-wave');
+        setIsCloningVoice(true);
+        addToast(`Analyzing voice sample "${file.name}"...`, 'info');
+
+        // Mock cloning process
+        setTimeout(() => {
+            setCustomVoiceName(file.name);
+            setSelectedVoice(file.name); // Auto-select the custom voice
+            addHistoryItem('Audio Studio', 'Cloned a voice from sample', 'sound-wave');
+            addToast(`Voice "${file.name}" successfully cloned!`, 'success');
+            setIsCloningVoice(false);
+        }, 2500);
     };
+
 
     const handleVoiceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -439,7 +452,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
             >
                 <Icon name={isRecording ? 'stop' : 'mic'} className="w-10 h-10" />
             </Button>
-            <p className="font-semibold text-lg text-brand-text dark:text-slate-200">{isRecording ? "Listening... (mock transcription)" : "Tap to start transcription"}</p>
+            <p className="font-semibold text-lg text-brand-text dark:text-slate-200">{isRecording ? "Listening..." : "Tap to start transcription"}</p>
             <Card className="w-full !p-4">
                 <div className="min-h-[150px] bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
                     <p className="text-brand-text dark:text-slate-300 whitespace-pre-wrap">{transcription || "Your live transcription will appear here..."}</p>
@@ -485,7 +498,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                                             className="!p-1"
                                             disabled={!!isGeneratingDemo}
                                          >
-                                            {isGeneratingDemo === voice.id ? <Spinner/> : <Icon name="audio" className="w-4 h-4" />}
+                                            {isGeneratingDemo === voice.id ? <Spinner/> : <Icon name="play" className="w-4 h-4" />}
                                          </Button>
                                      </Button>
                                 ))}
@@ -529,15 +542,26 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                         type="file" 
                         accept="audio/mp3,audio/wav,audio/mpeg" 
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                        onChange={handleVoiceFileChange} 
+                        onChange={handleVoiceFileChange}
+                        disabled={isCloningVoice}
                     />
-                    <div className="flex flex-col items-center justify-center">
-                        <Icon name="upload" className="w-6 h-6 mb-1 text-brand-subtle dark:text-slate-400"/>
-                        <p className="text-sm text-brand-subtle dark:text-slate-400 truncate px-2">
-                            {customVoiceName ? `Using voice: ${customVoiceName}` : 'Upload a voice sample (WAV, MP3)'}
-                        </p>
+                    <div className="flex flex-col items-center justify-center text-brand-subtle dark:text-slate-400">
+                        {isCloningVoice ? (
+                            <div className="flex flex-col items-center gap-2">
+                                <Spinner />
+                                <span>Cloning voice...</span>
+                            </div>
+                        ) : (
+                            <>
+                                <Icon name="upload" className="w-6 h-6 mb-1"/>
+                                <p className="text-sm truncate px-2">
+                                    {customVoiceName ? `Using voice: ${customVoiceName}` : 'Upload a voice sample (WAV, MP3)'}
+                                </p>
+                            </>
+                        )}
                     </div>
                 </div>
+                 {ttsError && <p className="text-red-500 text-sm mt-1">{ttsError}</p>}
             </div>
 
             <div>
@@ -577,7 +601,10 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                      <Slider label="Noise Reduction" min={0} max={100} step={1} value={noiseReduction} onChange={(e) => setNoiseReduction(Number(e.target.value))} />
                      <Slider label="De-Essing" min={0} max={100} step={1} value={deEss} onChange={(e) => setDeEss(Number(e.target.value))} />
                      <Slider label="Voice EQ" min={-100} max={100} step={1} value={voiceEq} onChange={(e) => setVoiceEq(Number(e.target.value))} />
-                     <Button onClick={handleApplyCleanup} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechAudio} icon="wand" variant="secondary" className="w-full">Apply Cleanup</Button>
+                     <div className="grid grid-cols-2 gap-2">
+                         <Button onClick={handleAutoCleanup} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechAudio} icon="sparkles" variant="secondary" className="w-full">Auto Cleanup</Button>
+                         <Button onClick={() => handleApplyCleanup({ noise: noiseReduction, deess: deEss, eq: voiceEq })} isLoading={isCleaning} disabled={isCleaning || !generatedSpeechAudio} icon="wand" variant="secondary" className="w-full">Apply Manual</Button>
+                     </div>
                 </div>
             </div>
              <div className="relative border-t dark:border-slate-700 pt-6">
@@ -593,7 +620,6 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                     </div>
                 )}
             </div>
-            {ttsError && <p className="text-red-500 text-sm">{ttsError}</p>}
         </div>
     );
     
@@ -601,6 +627,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
         <div className="space-y-6">
             <div>
                 <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-4 border-b dark:border-slate-700 pb-2">Royalty-Free Music</h3>
+                <p className="text-xs text-brand-subtle dark:text-slate-400 -mt-3 mb-4">Note: Generates instrumental music and sound effects only.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-brand-text dark:text-slate-300 mb-1">Mood</label>
@@ -642,7 +669,7 @@ const AudioEditor: React.FC<AudioEditorProps> = ({ addHistoryItem }) => {
                 </div>
                 <Button onClick={handleGenerateMusic} isLoading={isGeneratingMusic} disabled={isGeneratingMusic} icon="music" className="w-full mt-4">Generate Music</Button>
                 {generatedMusic && (
-                    <div className="mt-4">
+                    <div className="mt-4 animate-fade-in">
                         <audio controls src={`data:audio/wav;base64,${generatedMusic}`} className="w-full"></audio>
                     </div>
                 )}

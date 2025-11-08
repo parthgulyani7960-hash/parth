@@ -54,7 +54,8 @@ const CreativeChat: React.FC<CreativeChatProps> = ({ addHistoryItem }) => {
 
     return (
         <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl font-bold text-center mb-8 dark:text-slate-200">Creative Chat</h2>
+            <h2 className="text-4xl font-bold text-center mb-2 dark:text-slate-100">Creative Chat</h2>
+            <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Brainstorm ideas and co-create projects with an AI partner.</p>
             <Card className="!p-0">
                 <div className="flex flex-col h-[70vh]">
                     <div className="flex-grow p-6 overflow-y-auto space-y-6">
@@ -70,7 +71,7 @@ const CreativeChat: React.FC<CreativeChatProps> = ({ addHistoryItem }) => {
                                 </div>
                                  {msg.role === 'user' && (
                                     <div className="w-8 h-8 flex-shrink-0 bg-sky-200 text-sky-800 rounded-full flex items-center justify-center font-bold">
-                                        JD
+                                        CU
                                     </div>
                                 )}
                             </div>

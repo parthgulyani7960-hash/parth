@@ -402,10 +402,9 @@ const TemplatesEditor: React.FC<TemplatesEditorProps> = ({ addHistoryItem }) => 
     </div>
   );
 
-  // FIX: Added the main return statement for the component.
   return (
     <div className="max-w-7xl mx-auto">
-      <h2 className="text-3xl font-bold text-center mb-2 dark:text-slate-200">AI Template Studio</h2>
+      <h2 className="text-4xl font-bold text-center mb-2 dark:text-slate-100">AI Template Studio</h2>
       <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Browse pre-made templates or generate new ones with AI.</p>
       
       <div className="mb-6 border-b border-slate-200 dark:border-slate-700">

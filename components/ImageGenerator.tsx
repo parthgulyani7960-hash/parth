@@ -9,6 +9,7 @@ import Spinner from './common/Spinner';
 import Modal from './common/Modal';
 import Slider from './common/Slider';
 import { useToast } from '../hooks/useToast';
+import { useSession } from '../hooks/useSession';
 
 type AspectRatio = '1:1' | '16:9' | '9:16';
 type Style = 'Photorealistic' | 'Cartoon' | 'Watercolor' | 'Sci-Fi' | 'Fantasy' | 'Abstract' | 'Anime' | 'Pixel Art' | '3D Render' | 'Cyberpunk' | 'Steampunk' | 'Impressionist' | 'Surreal';
@@ -18,8 +19,10 @@ type PromptHistoryItem = {
     style: Style;
     negativePrompt: string;
 }
+type Suggestion = { text: string; action: () => void; icon: React.ComponentProps<typeof Icon>['name'] };
 interface ImageGeneratorProps {
-  addHistoryItem: (featureName: string, action: string, icon: HistoryItem['icon']) => void;
+  addHistoryItem: (featureName: string, action: string, icon: HistoryItem['icon'], previewUrl?: string, prompt?: string) => void;
+  setSuggestion: (suggestion: Suggestion | null) => void;
 }
 
 const SkeletonLoader: React.FC<{ aspectRatio: AspectRatio }> = ({ aspectRatio }) => {
@@ -45,7 +48,9 @@ const SkeletonLoader: React.FC<{ aspectRatio: AspectRatio }> = ({ aspectRatio })
 };
 
 
-const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem }) => {
+const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem, setSuggestion }) => {
+    const { themeOfTheDay } = useSession();
+
     // New structured state for photobashing
     const [elements, setElements] = useState<string[]>(['A majestic lion']);
     const [details, setDetails] = useState<string>('in the savanna at sunset, cinematic lighting');
@@ -92,6 +97,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem }) => {
     const [promptHistory, setPromptHistory] = useState<PromptHistoryItem[]>([]);
     const addToast = useToast();
     
+    useEffect(() => {
+        setElements([`A character inspired by the theme: ${themeOfTheDay}`]);
+        setDetails('cinematic lighting, epic composition');
+    }, [themeOfTheDay]);
+    
     const finalPrompt = useMemo(() => {
         return [
             ...elements.filter(el => el.trim()),
@@ -135,19 +145,27 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem }) => {
         }
         setIsLoading(true);
         setError('');
+        setSuggestion(null);
         
         const currentPrompt = { elements, details, style, negativePrompt };
         addToHistory(currentPrompt);
         
-        // FIX: The `generateImages` options object expects `imagePrompt` as a key.
         const images = await generateImages(finalPrompt, numberOfImages, aspectRatio, imagePromptFile ? { imagePrompt: { base64: imagePromptFile, influence: imageInfluence } } : undefined);
         const newHistory = generationHistory.slice(0, historyIndex + 1);
         const newHistoryWithCurrent = [...newHistory, images];
         setGenerationHistory(newHistoryWithCurrent);
         setHistoryIndex(newHistoryWithCurrent.length - 1);
 
-        addHistoryItem('Image Generator', `Generated ${images.length} image(s)`, 'sparkles');
+        addHistoryItem('Image Generator', `Generated ${images.length} image(s)`, 'sparkles', undefined, finalPrompt);
         setIsLoading(false);
+        setSuggestion({
+            text: 'Animate this image?',
+            icon: 'video',
+            action: () => {
+                addToast('Feature coming soon!', 'info');
+                setSuggestion(null);
+            }
+        });
     };
     
     const handleUndo = () => {
@@ -286,7 +304,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ addHistoryItem }) => {
 
     return (
         <div className="max-w-7xl mx-auto">
-            <h2 className="text-3xl font-bold text-center mb-8 dark:text-slate-200">AI Image Generator</h2>
+            <h2 className="text-4xl font-bold text-center mb-2 dark:text-slate-100">AI Image Generator</h2>
+            <p className="text-center text-lg text-brand-subtle dark:text-slate-400 mb-8">Create unique images and entire 3D worlds from text descriptions.</p>
             <div className="grid lg:grid-cols-3 gap-8">
                 {/* Controls Panel */}
                 <div className="lg:col-span-1">

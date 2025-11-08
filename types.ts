@@ -14,6 +14,7 @@ export interface HistoryItem {
   featureName: string;
   action: string;
   timestamp: Date;
-  icon: 'photo' | 'video' | 'sound-wave' | 'text' | 'template' | 'sparkles' | 'help' | 'chat';
+  icon: 'photo' | 'video' | 'sound-wave' | 'text' | 'template' | 'sparkles' | 'help' | 'chat' | 'user';
   previewUrl?: string;
+  prompt?: string;
 }

@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#7C3AED" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Creative Studio AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -41,6 +44,22 @@
         0%, 100% { box-shadow: 0 0 4px #7C3AED; }
         50% { box-shadow: 0 0 16px #7C3AED; }
       }
+      @keyframes stabilization-effect {
+        0% { transform: translate(0.5px, -0.5px); }
+        10% { transform: translate(-0.5px, 0.5px); }
+        20% { transform: translate(0.5px, 0.5px); }
+        30% { transform: translate(-0.5px, -0.5px); }
+        40% { transform: translate(0, 0); }
+        50% { transform: translate(0.5px, 0); }
+        60% { transform: translate(0, -0.5px); }
+        70% { transform: translate(-0.5px, 0.5px); }
+        80% { transform: translate(0.5px, -0.5px); }
+        90% { transform: translate(0, 0); }
+        100% { transform: translate(-0.5px, -0.5px); }
+      }
+      .video-stabilized {
+        animation: stabilization-effect 0.5s infinite;
+      }
       .card-tilt {
         transform-style: preserve-3d;
         transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -54,6 +73,14 @@
       /* Global fix for dark mode input text visibility */
       .dark input, .dark textarea, .dark select {
           color-scheme: dark;
+      }
+      /* More specific fix for dark mode text visibility */
+      .dark textarea,
+      .dark input[type='text'],
+      .dark input[type='number'],
+      .dark input[type='email'],
+      .dark input[type='password'] {
+          color: #e2e8f0; /* slate-200 */
       }
     </style>
     <script>
@@ -103,7 +130,7 @@
 }
 </script>
 </head>
-  <body class="bg-brand-bg dark:bg-slate-900">
+  <body class="bg-brand-bg dark:bg-slate-900 font-sans text-brand-text dark:text-slate-300">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>

@@ -10,7 +10,6 @@ import { useToast } from '../hooks/useToast';
 import Slider from './common/Slider';
 import Modal from './common/Modal';
 
-type Tab = 'edit' | 'generate';
 type Clip = { start: number; end: number };
 type Subtitle = { start: number; end: number; text: string };
 type Filter = { name: string; style: React.CSSProperties };
@@ -35,14 +34,15 @@ const formatTime = (timeInSeconds: number) => {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const AccordionSection: React.FC<{title: string; id: string; openSection: string; setOpenSection: (id: string) => void; children: React.ReactNode; info?: string}> = ({title, id, openSection, setOpenSection, children, info}) => {
+const AccordionSection: React.FC<{title: string; id: string; openSection: string; setOpenSection: (id: string) => void; children: React.ReactNode; info?: string, disabled?: boolean}> = ({title, id, openSection, setOpenSection, children, info, disabled = false}) => {
     const isOpen = openSection === id;
     return (
-         <div className="border-b dark:border-slate-700 last:border-b-0 pb-4 mb-4">
+         <div className={`border-b dark:border-slate-700 last:border-b-0 pb-4 mb-4 ${disabled ? 'opacity-50' : ''}`}>
             <button
                 className="w-full flex justify-between items-center text-left"
                 onClick={() => setOpenSection(isOpen ? '' : id)}
                 aria-expanded={isOpen}
+                disabled={disabled}
             >
                 <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 flex items-center gap-2">
                     {title}
@@ -61,8 +61,6 @@ const AccordionSection: React.FC<{title: string; id: string; openSection: string
 
 
 const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
-    const [activeTab, setActiveTab] = useState<Tab>('generate');
-
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [originalVideoUrl, setOriginalVideoUrl] = useState<string | null>(null);
@@ -100,8 +98,6 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
 
     const [genPrompt, setGenPrompt] = useState<string>('A cinematic shot of a futuristic city skyline at night, with flying cars.');
     const [genAspectRatio, setGenAspectRatio] = useState<'16:9' | '9:16'>('16:9');
-    const [genResolution, setGenResolution] = useState<'1080p' | '720p' | '480p'>('720p');
-    const [genBitrate, setGenBitrate] = useState<number>(5000);
     
     const [isCinematicModalOpen, setIsCinematicModalOpen] = useState(false);
     const [cinematicIntensity, setCinematicIntensity] = useState(50);
@@ -125,6 +121,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
     const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
     const [musicPrompt, setMusicPrompt] = useState('Upbeat and adventurous for a travel video');
     const [suggestedTracks, setSuggestedTracks] = useState<string[]>([]);
+    const [appliedMusic, setAppliedMusic] = useState<string | null>(null);
     const [isStabilized, setIsStabilized] = useState<boolean>(false);
 
     const [openSection, setOpenSection] = useState('ai');
@@ -172,6 +169,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
         setActiveEffect('None');
         setIsStabilized(false);
         setOriginalVideoUrl(null);
+        setAppliedMusic(null);
     };
 
     const processFile = (file: File) => {
@@ -185,8 +183,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
         const url = URL.createObjectURL(file);
         setVideoUrl(url);
         setOriginalVideoUrl(url);
-        setActiveTab('edit');
         resetEditState();
+        setOpenSection('ai'); // Switch focus to editing tools
         addHistoryItem('Video Suite', 'Loaded a video', 'video');
     };
 
@@ -288,16 +286,14 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
             return;
         }
         setIsLoading('Generating video...');
-        setVideoUrl(null);
         setError('');
         try {
             const url = await generateVideo(genPrompt, genAspectRatio, undefined, { 
-                resolution: genResolution,
-                bitrate: genBitrate,
+                resolution: '720p',
+                bitrate: 5000,
             });
             setVideoUrl(url);
             setOriginalVideoUrl(url);
-            setActiveTab('edit');
             addHistoryItem('Video Suite', 'Generated a video from prompt', 'video', url);
         } catch (err) {
             setError('Failed to generate video.');
@@ -575,6 +571,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
     };
 
     const handleApplyMusic = (trackName: string) => {
+        setAppliedMusic(trackName);
         addToast(`Applying "${trackName}" to timeline... (mock)`, 'success');
         addHistoryItem('Video Suite', `Applied music: ${trackName}`, 'video');
         setIsMusicModalOpen(false);
@@ -636,308 +633,249 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ addHistoryItem }) => {
         addToast('Trim reset to original video.', 'info');
     };
     
-    const renderPlayer = () => (
-        <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center">
-            {videoUrl ? (
-                <div
-                    className={`relative w-full h-full ${isSelectingForRemoval ? 'cursor-crosshair' : ''}`}
-                    onMouseDown={isSelectingForRemoval ? handleSelectionMouseDown : undefined}
-                    onMouseMove={isSelectingForRemoval ? handleSelectionMouseMove : undefined}
-                    onMouseUp={isSelectingForRemoval ? handleSelectionMouseUp : undefined}
+    // UI Components
+    const VideoUploadScreen = () => (
+        <div className="grid lg:grid-cols-2 gap-8 items-center min-h-[70vh]">
+            <Card>
+                <label 
+                    htmlFor="video-upload" 
+                    className={`w-full h-full flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer ${isDraggingOver ? 'border-brand-primary bg-slate-50 dark:bg-slate-700' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                    onDragEnter={handleDragEnter} onDragOver={handleDragEvents} onDragLeave={handleDragLeave} onDrop={handleDrop}
                 >
-                    <video
-                        ref={videoRef}
-                        src={videoUrl}
-                        className="w-full h-full object-contain"
-                        onLoadedMetadata={handleLoadedMetadata}
-                        onTimeUpdate={handleTimeUpdate}
-                        style={videoStyle}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
-                    {activeSubtitle && (
-                        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-full px-4 text-center">
-                            <p className="py-1 px-3 bg-black/60 text-white text-lg md:text-xl rounded">{activeSubtitle}</p>
-                        </div>
-                    )}
-                    <div className="absolute bottom-4 left-4 flex items-center gap-4 pointer-events-auto">
-                        <Button variant="icon" onClick={handlePlayPause}>
-                            <Icon name={isPlaying ? 'pause' : 'play'} className="w-6 h-6 text-white" />
-                        </Button>
-                        <div className="text-white font-mono text-sm">
-                            {formatTime(currentTime)} / {formatTime(duration)}
-                        </div>
-                    </div>
-                     {isSelectingForRemoval && (
-                        <div className="absolute inset-0 bg-black/30 pointer-events-none">
-                            {selectionRect && (
-                                <div
-                                    className="absolute border-2 border-dashed border-white bg-white/20"
-                                    style={{
-                                        left: selectionRect.x,
-                                        top: selectionRect.y,
-                                        width: selectionRect.width,
-                                        height: selectionRect.height,
-                                    }}
-                                />
-                            )}
-                        </div>
-                    )}
-                </div>
-            ) : (
-                <div className="text-center text-brand-subtle dark:text-slate-400 p-8">
-                    <Icon name="video" className="w-16 h-16 mx-auto mb-4" />
-                    <p className="font-semibold text-lg text-brand-text dark:text-slate-200 mb-4">Your Video Player</p>
-                    <p className="mb-6">Upload a video to start editing or switch to the "Generate" tab to create one with AI.</p>
-                    <Button variant="secondary" onClick={() => setActiveTab('generate')} icon="back">
-                        Go to Generate / Upload
-                    </Button>
-                </div>
-            )}
-            {isLoading && (
-                 <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 text-white">
-                    <Spinner />
-                    <p className="font-semibold">{isLoading}</p>
-                 </div>
-            )}
-        </div>
-    );
-    
-    const renderTimeline = () => (
-        <div className="w-full">
-            <DualRangeSlider min={0} max={duration} value={trimRange} onChange={setTrimRange} step={0.1} />
-            <div className="relative h-8 mt-2 w-full bg-slate-200 dark:bg-slate-700 rounded-lg">
-                {/* Current time indicator */}
-                <div 
-                    className="absolute top-0 h-full w-0.5 bg-red-500 z-20"
-                    style={{ left: `${(currentTime / duration) * 100}%` }}
-                />
-                {/* Clips */}
-                {suggestedClips.map((clip, i) => (
-                    <div
-                        key={i}
-                        className="absolute top-0 h-full bg-brand-primary/50 rounded-md cursor-pointer hover:bg-brand-primary/70"
-                        style={{
-                            left: `${(clip.start / duration) * 100}%`,
-                            width: `${((clip.end - clip.start) / duration) * 100}%`,
-                        }}
-                        onClick={() => videoRef.current && (videoRef.current.currentTime = clip.start)}
-                    />
-                ))}
-                {/* Scene Markers */}
-                {sceneMarkers.map((marker, i) => (
-                    <div
-                        key={i}
-                        className="absolute top-0 h-full w-0.5 bg-fuchsia-500 z-10"
-                        style={{ left: `${(marker / duration) * 100}%` }}
-                    />
-                ))}
-            </div>
-        </div>
-    );
-    
-    const renderGenerateTab = () => (
-        <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1">
-                <Card className="h-full">
-                    <div className="flex flex-col h-full space-y-6">
+                    <Icon name="upload" className="w-12 h-12 text-brand-subtle dark:text-slate-400" />
+                    <p className="mt-2 font-semibold text-brand-text dark:text-slate-200">Upload or drop a video</p>
+                    <p className="text-sm text-brand-subtle dark:text-slate-400">MP4, MOV, WEBM supported</p>
+                    <input id="video-upload" type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
+                </label>
+            </Card>
+             <Card>
+                <div className="space-y-4 text-center">
+                    <Icon name="sparkles" className="w-12 h-12 text-brand-primary mx-auto" />
+                    <h3 className="text-xl font-semibold text-brand-text dark:text-slate-200">Generate with AI</h3>
+                    <p className="text-brand-subtle dark:text-slate-400">Describe the video you want to create, and let AI bring it to life.</p>
+                     <div className="space-y-4 text-left">
                         <div>
-                            <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-3">Generate Video from Text</h3>
+                            <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Prompt</label>
                             <textarea
                                 value={genPrompt}
                                 onChange={(e) => {
                                   setGenPrompt(e.target.value);
                                   if (validationErrors.genPrompt) setValidationErrors({});
                                 }}
-                                placeholder="e.g., A majestic eagle soaring over a mountain range..."
-                                rows={6}
+                                placeholder="e.g., A majestic eagle soaring..."
+                                rows={4}
                                 className={`w-full p-3 border rounded-lg focus:ring-2 focus:outline-none transition bg-white dark:bg-slate-800 text-brand-text dark:text-slate-100 ${validationErrors.genPrompt ? 'border-red-500 ring-red-200' : 'border-slate-300 dark:border-slate-600 focus:ring-brand-primary'}`}
                             />
                              {validationErrors.genPrompt && <p className="text-red-500 text-sm mt-1">{validationErrors.genPrompt}</p>}
                         </div>
-                         <div>
-                            <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Aspect Ratio</label>
-                            <div className="flex gap-2">
-                                {(['16:9', '9:16'] as const).map(ratio => (
-                                    <Button key={ratio} variant={genAspectRatio === ratio ? 'primary' : 'secondary'} onClick={() => setGenAspectRatio(ratio)} className="w-full">{ratio}</Button>
-                                ))}
-                            </div>
-                        </div>
-                        <div>
-                            <h4 className="text-md font-semibold text-brand-text dark:text-slate-300 mb-3">Quality Settings</h4>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Resolution</label>
-                                    <div className="flex gap-2">
-                                        {(['1080p', '720p', '480p'] as const).map(res => (
-                                            <Button key={res} variant={genResolution === res ? 'primary' : 'secondary'} onClick={() => setGenResolution(res)} className="w-full">{res}</Button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <Slider 
-                                        label={`Bitrate: ${genBitrate} kbps`}
-                                        min={1000}
-                                        max={8000}
-                                        step={500}
-                                        value={genBitrate}
-                                        onChange={(e) => setGenBitrate(Number(e.target.value))}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex-grow"></div>
-                        <Button onClick={handleGenerateVideo} isLoading={!!isLoading} disabled={!!isLoading} icon="sparkles" className="w-full !py-4 text-lg">
+                        <Button onClick={handleGenerateVideo} isLoading={!!isLoading} disabled={!!isLoading} icon="sparkles" className="w-full">
                             Generate Video
                         </Button>
-                    </div>
-                </Card>
-            </div>
-            <div className="lg:col-span-2">
-                 <label 
-                    onDragEnter={handleDragEnter} onDragOver={handleDragEvents} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                    htmlFor="video-upload" className={`w-full h-full min-h-[50vh] flex flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors cursor-pointer ${isDraggingOver ? 'border-brand-primary bg-slate-50 dark:bg-slate-700' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
-                >
-                     <Icon name="upload" className="w-12 h-12 text-brand-subtle dark:text-slate-400" />
-                    <p className="mt-2 font-semibold text-brand-text dark:text-slate-200">...or upload a video to edit</p>
-                    <p className="text-sm text-brand-subtle dark:text-slate-400">MP4, MOV, WEBM supported</p>
-                    <input id="video-upload" type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
-                </label>
-            </div>
-        </div>
-    );
-    
-    const renderEditTab = () => (
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-4">
-            <Card className="p-0 overflow-hidden">
-                {renderPlayer()}
-            </Card>
-            {isSelectingForRemoval && (
-                <Card className="p-4 flex items-center justify-between animate-fade-in">
-                    <p className="font-semibold text-brand-text dark:text-slate-200">Draw on the video to select an object.</p>
-                    <div className="flex gap-2">
-                        <Button variant="secondary" onClick={handleCancelObjectRemoval}>Cancel</Button>
-                        <Button variant="primary" onClick={handleConfirmObjectRemoval} disabled={!selectionRect || isDrawingSelection}>Confirm</Button>
-                    </div>
-                </Card>
-            )}
-            <Card>
-                {renderTimeline()}
-            </Card>
-           <Card>
-                <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-3">AI Frame Analysis</h3>
-                <div className="space-y-4">
-                    <textarea
-                        value={analysisPrompt}
-                        onChange={(e) => setAnalysisPrompt(e.target.value)}
-                        rows={2}
-                        className="w-full p-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-brand-primary focus:outline-none transition"
-                        placeholder="Ask the AI about the current frame..."
-                    />
-                    <Button onClick={handleAnalyzeFrame} isLoading={isAnalyzing} disabled={!videoUrl || isAnalyzing} icon="wand" variant="secondary" className="w-full">
-                        Analyze Current Frame
-                    </Button>
-                    {isAnalyzing && !analysisResult && <div className="flex justify-center py-4"><Spinner /></div>}
-                    {analysisResult && (
-                        <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg whitespace-pre-wrap font-mono text-sm dark:text-slate-300">
-                            {analysisResult}
-                        </div>
-                    )}
+                     </div>
                 </div>
             </Card>
         </div>
-        <div className="lg:col-span-1">
-            <Card className="h-full">
-                <div className="flex flex-col h-full">
-                    <AccordionSection title="AI Enhancement Suite" id="ai" openSection={openSection} setOpenSection={setOpenSection} info="Powerful AI tools to automatically improve and add content to your video.">
-                        <Button onClick={handleAutoCut} isLoading={isLoading === 'Generating auto-cuts...'} disabled={!videoUrl || !!isLoading} icon="scissors" variant="secondary" className="w-full justify-start">AI Auto-Cut</Button>
-                        <Button onClick={handleGenerateSubtitles} isLoading={isLoading === 'Generating subtitles...'} disabled={!videoUrl || !!isLoading} icon="subtitles" variant="secondary" className="w-full justify-start">AI Subtitles</Button>
-                        <Button onClick={handleDetectScenes} isLoading={isLoading === 'Detecting scenes...'} disabled={!videoUrl || !!isLoading} icon="sparkles" variant="secondary" className="w-full justify-start">AI Scene Detection</Button>
-                        <Button onClick={() => setIsCinematicModalOpen(true)} isLoading={isLoading === 'Applying cinematic mode...'} disabled={!videoUrl || !!isLoading} icon="film" variant="secondary" className="w-full justify-start">AI Cinematic Mode</Button>
-                        <Button onClick={() => setIsMusicModalOpen(true)} isLoading={isLoading === 'Suggesting music...'} disabled={!videoUrl || !!isLoading} icon="music" variant="secondary" className="w-full justify-start">AI Music Suggestion</Button>
-                        <Button onClick={handleStabilizeVideo} isLoading={isLoading === 'Stabilizing video...'} disabled={!videoUrl || !!isLoading || isStabilized} icon="stabilize" variant="secondary" className="w-full justify-start">{isStabilized ? 'Video Stabilized' : 'Stabilize Video'}</Button>
-                        <Button onClick={handleUpscaleVideo} isLoading={isLoading === 'Upscaling resolution...'} disabled={!videoUrl || !!isLoading || isUpscaled} icon="upscale" variant="secondary" className="w-full justify-start">{isUpscaled ? 'Resolution Upscaled' : 'AI Upscale Resolution'}</Button>
-                        <Button onClick={handleImproveBitrate} isLoading={isLoading === 'Improving bitrate...'} disabled={!videoUrl || !!isLoading || isBitrateImproved} icon="star" variant="secondary" className="w-full justify-start">{isBitrateImproved ? 'Bitrate Improved' : 'AI Improve Bitrate'}</Button>
-                        <Button onClick={handleStartObjectRemoval} isLoading={isLoading === 'Removing object...'} disabled={!videoUrl || !!isLoading || isSelectingForRemoval} icon="eraser" variant="secondary" className="w-full justify-start">AI Object Removal</Button>
-                        <Button onClick={() => setIsObjectReplacementModalOpen(true)} isLoading={isLoading === 'Replacing object...'} disabled={!videoUrl || !!isLoading} icon="feather" variant="secondary" className="w-full justify-start">AI Object Replacement</Button>
-                        <Button onClick={() => setIsSlowMoModalOpen(true)} isLoading={isLoading === 'Applying slow motion...'} disabled={!videoUrl || !!isLoading} icon="feather" variant="secondary" className="w-full justify-start">AI Slow Motion</Button>
-                        <Button onClick={() => setIsStyleTransferModalOpen(true)} isLoading={isLoading === 'Transferring style...'} disabled={!videoUrl || !!isLoading} icon="palette" variant="secondary" className="w-full justify-start">AI Style Transfer</Button>
-                    </AccordionSection>
-                    
-                    <AccordionSection title="Trimming & Cutting" id="trim" openSection={openSection} setOpenSection={setOpenSection} info="Precisely cut your video by setting start and end points. The timeline slider also adjusts the trim range.">
-                        <div className="text-center mb-2 font-mono text-sm dark:text-slate-300">
-                            {formatTime(trimRange[0])} - {formatTime(trimRange[1])}
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <Button onClick={handleSetStartPoint} disabled={!videoUrl || !!isLoading} variant="secondary" className="text-xs">Set Start from Playhead</Button>
-                            <Button onClick={handleSetEndPoint} disabled={!videoUrl || !!isLoading} variant="secondary" className="text-xs">Set End from Playhead</Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                            <Button onClick={handleApplyTrim} disabled={!videoUrl || !!isLoading || (trimRange[0] === 0 && trimRange[1] >= duration)} variant="primary">Apply Trim</Button>
-                            <Button onClick={handleResetTrim} disabled={!videoUrl || !!isLoading || !videoUrl?.includes('#t=')} variant="secondary">Reset Trim</Button>
-                        </div>
-                    </AccordionSection>
-
-                    <AccordionSection title="Color & Filters" id="color" openSection={openSection} setOpenSection={setOpenSection} info="Apply professional color presets or fine-tune the look of your video with precise adjustments.">
-                         <div className="grid grid-cols-3 gap-2">
-                            {filters.map(filter => (
-                                <Button key={filter.name} variant={activeFilter.name === filter.name ? 'primary' : 'secondary'} onClick={() => setActiveFilter(filter)} className="!text-xs !px-2 !py-2 w-full">{filter.name}</Button>
-                            ))}
-                        </div>
-                        <div className="space-y-4 mt-4 pt-4 border-t dark:border-slate-600">
-                             <div className="flex justify-between items-center">
-                                <h4 className="font-semibold text-brand-text dark:text-slate-300">Advanced Correction</h4>
-                                <Button onClick={handleResetColor} variant="tool" className="!text-xs !py-1 !px-2">Reset</Button>
-                            </div>
-                            <Slider label="Brightness" value={brightness} onChange={(e) => setBrightness(Number(e.target.value))} min={50} max={150} />
-                            <Slider label="Contrast" value={contrast} onChange={(e) => setContrast(Number(e.target.value))} min={50} max={150} />
-                            <Slider label="Saturation" value={saturation} onChange={(e) => setSaturation(Number(e.target.value))} min={0} max={200} />
-                            <Slider label="Hue" value={hue} onChange={(e) => setHue(Number(e.target.value))} min={-180} max={180} />
-                        </div>
-                    </AccordionSection>
-
-                    <AccordionSection title="Playback & Effects" id="effects" openSection={openSection} setOpenSection={setOpenSection} info="Control playback speed and apply special mock effects.">
-                        <div>
-                             <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Playback Speed</label>
-                             <div className="grid grid-cols-4 gap-2">
-                                {[0.5, 1, 1.5, 2].map(rate => (
-                                    <Button key={rate} variant={playbackRate === rate ? 'primary' : 'secondary'} onClick={() => setPlaybackRate(rate)} className="!text-xs !px-2 !py-2 w-full">{rate}x</Button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="mt-4 pt-4 border-t dark:border-slate-600">
-                             <h4 className="font-semibold text-brand-text dark:text-slate-300 mb-2">Special Effects</h4>
-                             <div className="grid grid-cols-2 gap-2">
-                                {['None', 'Old Film', 'Neon Glow', 'Glitch'].map(effect => (
-                                    <Button key={effect} variant={activeEffect === effect ? 'primary' : 'secondary'} onClick={() => handleApplyEffect(effect)} className="w-full !text-xs capitalize !px-2 !py-2">{effect}</Button>
-                                ))}
-                            </div>
-                        </div>
-                    </AccordionSection>
-                </div>
-            </Card>
-        </div>
-      </div>
     );
 
+    const VideoEditorUI = () => (
+       <div className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-4">
+                <Card className="p-0 overflow-hidden">
+                    <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center">
+                        <div
+                            className={`relative w-full h-full ${isSelectingForRemoval ? 'cursor-crosshair' : ''}`}
+                            onMouseDown={isSelectingForRemoval ? handleSelectionMouseDown : undefined}
+                            onMouseMove={isSelectingForRemoval ? handleSelectionMouseMove : undefined}
+                            onMouseUp={isSelectingForRemoval ? handleSelectionMouseUp : undefined}
+                        >
+                            <video
+                                ref={videoRef}
+                                src={videoUrl!}
+                                className={`w-full h-full object-contain ${isStabilized ? 'video-stabilized' : ''}`}
+                                onLoadedMetadata={handleLoadedMetadata}
+                                onTimeUpdate={handleTimeUpdate}
+                                style={videoStyle}
+                                controls
+                            />
+                            {activeSubtitle && (
+                                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-full px-4 text-center pointer-events-none">
+                                    <p className="py-1 px-3 bg-black/60 text-white text-lg md:text-xl rounded">{activeSubtitle}</p>
+                                </div>
+                            )}
+                             {isSelectingForRemoval && (
+                                <div className="absolute inset-0 bg-black/30 pointer-events-none">
+                                    {selectionRect && (
+                                        <div
+                                            className="absolute border-2 border-dashed border-white bg-white/20"
+                                            style={{
+                                                left: selectionRect.x,
+                                                top: selectionRect.y,
+                                                width: selectionRect.width,
+                                                height: selectionRect.height,
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        {isLoading && (
+                             <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 text-white">
+                                <Spinner />
+                                <p className="font-semibold">{isLoading}</p>
+                             </div>
+                        )}
+                    </div>
+                </Card>
+                <Card>
+                  <div className="w-full">
+                      <DualRangeSlider min={0} max={duration} value={trimRange} onChange={setTrimRange} step={0.1} />
+                      <div className="relative h-8 mt-2 w-full bg-slate-200 dark:bg-slate-700 rounded-lg">
+                          <div 
+                              className="absolute top-0 h-full w-0.5 bg-red-500 z-20"
+                              style={{ left: `${(currentTime / duration) * 100}%` }}
+                          />
+                          {suggestedClips.map((clip, i) => (
+                              <div
+                                  key={`clip-${i}`}
+                                  className="absolute top-0 h-full bg-brand-primary/50 rounded-md cursor-pointer hover:bg-brand-primary/70"
+                                  style={{
+                                      left: `${(clip.start / duration) * 100}%`,
+                                      width: `${((clip.end - clip.start) / duration) * 100}%`,
+                                  }}
+                                  onClick={() => videoRef.current && (videoRef.current.currentTime = clip.start)}
+                              />
+                          ))}
+                          {sceneMarkers.map((marker, i) => (
+                              <div
+                                  key={`marker-${i}`}
+                                  className="absolute top-0 h-full w-0.5 bg-fuchsia-500 z-10"
+                                  style={{ left: `${(marker / duration) * 100}%` }}
+                              />
+                          ))}
+                           {appliedMusic && (
+                              <div className="absolute bottom-0 h-full bg-emerald-500/30 rounded-lg flex items-center" style={{ left: 0, width: '100%'}}>
+                                  <div className="flex items-center h-full px-2">
+                                      <Icon name="music" className="w-4 h-4 text-emerald-800 dark:text-emerald-200" />
+                                      <span className="text-emerald-800 dark:text-emerald-200 text-xs ml-1 truncate font-medium">{appliedMusic}</span>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+                </Card>
+               {isSelectingForRemoval && (
+                    <Card className="p-4 flex items-center justify-between animate-fade-in">
+                        <p className="font-semibold text-brand-text dark:text-slate-200">Draw on the video to select an object.</p>
+                        <div className="flex gap-2">
+                            <Button variant="secondary" onClick={handleCancelObjectRemoval}>Cancel</Button>
+                            <Button variant="primary" onClick={handleConfirmObjectRemoval} disabled={!selectionRect || isDrawingSelection}>Confirm</Button>
+                        </div>
+                    </Card>
+                )}
+               <Card>
+                    <h3 className="text-lg font-semibold text-brand-text dark:text-slate-200 mb-3">AI Frame Analysis</h3>
+                    <div className="space-y-4">
+                        <textarea
+                            value={analysisPrompt}
+                            onChange={(e) => setAnalysisPrompt(e.target.value)}
+                            rows={2}
+                            className="w-full p-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-brand-primary focus:outline-none transition"
+                            placeholder="Ask the AI about the current frame..."
+                        />
+                        <Button onClick={handleAnalyzeFrame} isLoading={isAnalyzing} disabled={!videoUrl || isAnalyzing} icon="wand" variant="secondary" className="w-full">
+                            Analyze Current Frame
+                        </Button>
+                        {isAnalyzing && !analysisResult && <div className="flex justify-center py-4"><Spinner /></div>}
+                        {analysisResult && (
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg whitespace-pre-wrap font-mono text-sm dark:text-slate-300">
+                                {analysisResult}
+                            </div>
+                        )}
+                    </div>
+                </Card>
+            </div>
+            <div className="lg:col-span-1">
+                <Card className="h-full max-h-[85vh] overflow-y-auto">
+                    <div className="flex flex-col h-full">
+                        <AccordionSection title="AI Enhancement Suite" id="ai" openSection={openSection} setOpenSection={setOpenSection} info="Powerful AI tools to automatically improve and add content to your video." disabled={!videoUrl}>
+                            <Button onClick={handleAutoCut} isLoading={isLoading === 'Generating auto-cuts...'} disabled={!videoUrl || !!isLoading} icon="scissors" variant="secondary" className="w-full justify-start">AI Auto-Cut</Button>
+                            <Button onClick={handleGenerateSubtitles} isLoading={isLoading === 'Generating subtitles...'} disabled={!videoUrl || !!isLoading} icon="subtitles" variant="secondary" className="w-full justify-start">AI Subtitles</Button>
+                            <Button onClick={handleDetectScenes} isLoading={isLoading === 'Detecting scenes...'} disabled={!videoUrl || !!isLoading} icon="sparkles" variant="secondary" className="w-full justify-start">AI Scene Detection</Button>
+                            <Button onClick={() => setIsCinematicModalOpen(true)} isLoading={isLoading === 'Applying cinematic mode...'} disabled={!videoUrl || !!isLoading} icon="film" variant="secondary" className="w-full justify-start">AI Cinematic Mode</Button>
+                            <Button onClick={() => setIsMusicModalOpen(true)} isLoading={isLoading === 'Suggesting music...'} disabled={!videoUrl || !!isLoading} icon="music" variant="secondary" className="w-full justify-start">AI Music Suggestion</Button>
+                            <Button onClick={handleStabilizeVideo} isLoading={isLoading === 'Stabilizing video...'} disabled={!videoUrl || !!isLoading || isStabilized} icon="stabilize" variant="secondary" className="w-full justify-start">{isStabilized ? 'Video Stabilized' : 'Stabilize Video'}</Button>
+                            <Button onClick={handleUpscaleVideo} isLoading={isLoading === 'Upscaling resolution...'} disabled={!videoUrl || !!isLoading || isUpscaled} icon="upscale" variant="secondary" className="w-full justify-start">{isUpscaled ? 'Resolution Upscaled' : 'AI Upscale Resolution'}</Button>
+                            <Button onClick={handleImproveBitrate} isLoading={isLoading === 'Improving bitrate...'} disabled={!videoUrl || !!isLoading || isBitrateImproved} icon="star" variant="secondary" className="w-full justify-start">{isBitrateImproved ? 'Bitrate Improved' : 'AI Improve Bitrate'}</Button>
+                            <Button onClick={handleStartObjectRemoval} isLoading={isLoading === 'Removing object...'} disabled={!videoUrl || !!isLoading || isSelectingForRemoval} icon="eraser" variant="secondary" className="w-full justify-start">AI Object Removal</Button>
+                            <Button onClick={() => setIsObjectReplacementModalOpen(true)} isLoading={isLoading === 'Replacing object...'} disabled={!videoUrl || !!isLoading} icon="feather" variant="secondary" className="w-full justify-start">AI Object Replacement</Button>
+                            <Button onClick={() => setIsSlowMoModalOpen(true)} isLoading={isLoading === 'Applying slow motion...'} disabled={!videoUrl || !!isLoading} icon="feather" variant="secondary" className="w-full justify-start">AI Slow Motion</Button>
+                            <Button onClick={() => setIsStyleTransferModalOpen(true)} isLoading={isLoading === 'Transferring style...'} disabled={!videoUrl || !!isLoading} icon="palette" variant="secondary" className="w-full justify-start">AI Style Transfer</Button>
+                        </AccordionSection>
+                        
+                        <AccordionSection title="Trimming & Cutting" id="trim" openSection={openSection} setOpenSection={setOpenSection} info="Precisely cut your video by setting start and end points. The timeline slider also adjusts the trim range." disabled={!videoUrl}>
+                            <div className="text-center mb-2 font-mono text-sm dark:text-slate-300">
+                                {formatTime(trimRange[0])} - {formatTime(trimRange[1])}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <Button onClick={handleSetStartPoint} disabled={!videoUrl || !!isLoading} variant="secondary" className="text-xs">Set Start from Playhead</Button>
+                                <Button onClick={handleSetEndPoint} disabled={!videoUrl || !!isLoading} variant="secondary" className="text-xs">Set End from Playhead</Button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                                <Button onClick={handleApplyTrim} disabled={!videoUrl || !!isLoading || (trimRange[0] === 0 && trimRange[1] >= duration)} variant="primary">Apply Trim</Button>
+                                <Button onClick={handleResetTrim} disabled={!videoUrl || !!isLoading || !videoUrl?.includes('#t=')} variant="secondary">Reset Trim</Button>
+                            </div>
+                        </AccordionSection>
 
-  return (
+                        <AccordionSection title="Color & Filters" id="color" openSection={openSection} setOpenSection={setOpenSection} info="Apply professional color presets or fine-tune the look of your video with precise adjustments." disabled={!videoUrl}>
+                             <div className="grid grid-cols-3 gap-2">
+                                {filters.map(filter => (
+                                    <Button key={filter.name} variant={activeFilter.name === filter.name ? 'primary' : 'secondary'} onClick={() => setActiveFilter(filter)} className="!text-xs !px-2 !py-2 w-full">{filter.name}</Button>
+                                ))}
+                            </div>
+                            <div className="space-y-4 mt-4 pt-4 border-t dark:border-slate-600">
+                                 <div className="flex justify-between items-center">
+                                    <h4 className="font-semibold text-brand-text dark:text-slate-300">Advanced Correction</h4>
+                                    <Button onClick={handleResetColor} variant="tool" className="!text-xs !py-1 !px-2">Reset</Button>
+                                </div>
+                                <Slider label="Brightness" value={brightness} onChange={(e) => setBrightness(Number(e.target.value))} min={50} max={150} />
+                                <Slider label="Contrast" value={contrast} onChange={(e) => setContrast(Number(e.target.value))} min={50} max={150} />
+                                <Slider label="Saturation" value={saturation} onChange={(e) => setSaturation(Number(e.target.value))} min={0} max={200} />
+                                <Slider label="Hue" value={hue} onChange={(e) => setHue(Number(e.target.value))} min={-180} max={180} />
+                            </div>
+                        </AccordionSection>
+
+                        <AccordionSection title="Playback & Effects" id="effects" openSection={openSection} setOpenSection={setOpenSection} info="Control playback speed and apply special mock effects." disabled={!videoUrl}>
+                            <div>
+                                 <label className="block text-sm font-medium text-brand-subtle dark:text-slate-400 mb-2">Playback Speed</label>
+                                 <div className="grid grid-cols-4 gap-2">
+                                    {[0.5, 1, 1.5, 2].map(rate => (
+                                        <Button key={rate} variant={playbackRate === rate ? 'primary' : 'secondary'} onClick={() => setPlaybackRate(rate)} className="!text-xs !px-2 !py-2 w-full">{rate}x</Button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="mt-4 pt-4 border-t dark:border-slate-600">
+                                 <h4 className="font-semibold text-brand-text dark:text-slate-300 mb-2">Special Effects</h4>
+                                 <div className="grid grid-cols-2 gap-2">
+                                    {['None', 'Old Film', 'Neon Glow', 'Glitch'].map(effect => (
+                                        <Button key={effect} variant={activeEffect === effect ? 'primary' : 'secondary'} onClick={() => handleApplyEffect(effect)} className="w-full !text-xs capitalize !px-2 !py-2">{effect}</Button>
+                                    ))}
+                                </div>
+                            </div>
+                        </AccordionSection>
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+
+    return (
     <div className="max-w-7xl mx-auto">
         <div className="text-center mb-8">
             <h2 className="text-4xl font-bold dark:text-slate-100">AI Video Suite</h2>
             <p className="text-lg text-brand-subtle dark:text-slate-400">Generate, edit, and enhance videos with the power of AI.</p>
         </div>
         
-        <div className="mb-6 border-b border-slate-200 dark:border-slate-700 flex justify-center">
-            <nav className="flex -mb-px gap-6">
-                <button onClick={() => setActiveTab('generate')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'generate' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>Generate / Upload</button>
-                <button onClick={() => setActiveTab('edit')} className={`py-4 px-1 border-b-2 font-medium text-lg ${activeTab === 'edit' ? 'border-brand-primary text-brand-primary' : 'border-transparent text-brand-subtle dark:text-slate-400 hover:text-brand-text dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'}`}>Edit</button>
-            </nav>
-        </div>
-
-        {activeTab === 'generate' && !videoUrl && renderGenerateTab()}
-
-        {(activeTab === 'edit' || (activeTab === 'generate' && videoUrl)) && renderEditTab()}
+        { !videoUrl ? <VideoUploadScreen /> : <VideoEditorUI /> }
         
         <Modal isOpen={isCinematicModalOpen} onClose={() => setIsCinematicModalOpen(false)} title="AI Cinematic Mode">
              <div className="space-y-6">

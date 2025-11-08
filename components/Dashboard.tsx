@@ -20,7 +20,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onSelectFeature }) => {
   return (
     <div className="max-w-6xl mx-auto animate-slide-in-up">
       <div className="text-center mb-12">
-        <h2 className="text-5xl font-bold text-brand-text dark:text-slate-200 mb-3">👋 Welcome Back!</h2>
+        <h2 className="text-5xl font-bold text-brand-text dark:text-slate-200 mb-3">Creative Dashboard</h2>
         <p className="text-xl text-brand-subtle dark:text-slate-400">What will you create today?</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
